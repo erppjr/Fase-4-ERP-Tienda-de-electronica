@@ -1,0 +1,23 @@
+# Logs y archivos temporales
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Entornos
+.env
+.env.local
+.env.*.local
+
+# Node modules (si alguna vez se usan)
+node_modules/
+
+# Carpetas de documentación personal
+contexto/
