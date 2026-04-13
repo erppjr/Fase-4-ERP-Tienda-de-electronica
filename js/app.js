@@ -7,6 +7,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const roleSelect = document.getElementById('role-select');
     const displayRole = document.getElementById('display-role');
 
+    // Generador de IDs únicos
+    window.generarIdUnico = (prefijo) => {
+        return `${prefijo}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    };
+
     // Estado global de Charts (para destruirlos antes de re-dibujar)
     let doughnutChart = null;
     let barChart = null;
@@ -111,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'pedidos': renderPedidos(); break;
             case 'incidencias': renderIncidencias(); break;
             case 'proveedores': renderProveedores(); break;
+            case 'tareas': renderTareas(); break;
             case 'finanzas': renderFinanzas(); break;
             default: viewContainer.innerHTML = '<h1>Vista no encontrada</h1>';
         }
@@ -167,15 +173,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- Gráfico de Pedidos (Doughnut) ---
         setTimeout(() => {
             const ctxD = document.getElementById('pedidosChart').getContext('2d');
-            const counts = { completado: 0, pendiente: 0, preparacion: 0, incidencia: 0 };
+            const counts = { completado: 0, pendiente: 0, en_proceso: 0, incidencia: 0 };
             window.erpDB.pedidos.forEach(p => counts[p.estado]++);
 
             doughnutChart = new Chart(ctxD, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Completado', 'Pendiente', 'Preparación', 'Incidencia'],
+                    labels: ['Completado', 'Pendiente', 'En Proceso', 'Incidencia'],
                     datasets: [{
-                        data: [counts.completado, counts.pendiente, counts.preparacion, counts.incidencia],
+                        data: [counts.completado, counts.pendiente, counts.en_proceso, counts.incidencia],
                         backgroundColor: ['#00e676', '#ffb300', '#4d7cff', '#ff3d71'],
                         borderWidth: 0
                     }]
@@ -280,11 +286,14 @@ document.addEventListener('DOMContentLoaded', () => {
         window.crearCategoria = () => {
             const nombre = document.getElementById('nuevo-cat-nombre').value.trim();
             if(!nombre) return alert('El nombre no puede estar vacío');
-            window.erpDB.categoriasEstructura.push({ id: 'CAT-' + Date.now(), nombre: nombre, subcategorias: [] });
+            if(window.erpDB.categoriasEstructura.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+                return alert('Ya existe una categoría con ese nombre');
+            }
+            window.erpDB.categoriasEstructura.push({ id: window.generarIdUnico('CAT'), nombre: nombre, subcategorias: [] });
             window.saveERPData();
             actualizarKPIs();
             renderView('inventario');
-            setTimeout(() => window.abrirGestionEstructura(), 50); // Reabrir modal fresh
+            setTimeout(() => window.abrirGestionEstructura(), 50);
         };
 
         window.renombrarCategoria = () => {
@@ -305,8 +314,11 @@ document.addEventListener('DOMContentLoaded', () => {
         window.crearSubcategoria = () => {
             const targetCat = document.getElementById('nueva-sub-parent').value;
             const nombre = document.getElementById('nuevo-sub-nombre').value.trim();
-            if(!nombre || !targetCat) return;
+            if(!nombre || !targetCat) return alert('Todos los campos son requeridos');
             const cat = window.erpDB.categoriasEstructura.find(c => c.nombre === targetCat);
+            if(cat && cat.subcategorias.some(s => s.toLowerCase() === nombre.toLowerCase())) {
+                return alert('Ya existe esa subcategoría en esta categoría');
+            }
             if(cat && !cat.subcategorias.includes(nombre)) {
                 cat.subcategorias.push(nombre);
             }
@@ -420,6 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.toggleSubcatFilter = (subcat) => {
         if (activeFilters.has(subcat)) activeFilters.delete(subcat);
         else activeFilters.add(subcat);
+        window.pedidoPage = 1;
         renderNivel2Completo(document.getElementById('nivel2-catname').value);
     };
 
@@ -428,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableFilters.brand = document.getElementById('filt-brand').value;
         tableFilters.sortName = document.getElementById('filt-sort-name').value;
         tableFilters.sortStock = document.getElementById('filt-sort-stock').value;
+        window.pedidoPage = 1;
         renderNivel2Completo(document.getElementById('nivel2-catname').value);
     }
 
@@ -465,18 +479,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const newVal = parseInt(document.getElementById('input-stock').value);
             const volverCat = document.getElementById('ajuste-cat').value;
             const prd = window.erpDB.productos.find(p => p.id === idStr);
-            if (!isNaN(newVal) && newVal >= 0) {
-                prd.stock = newVal;
-                actualizarKPIs();
-                cerrarModal();
-                renderNivel2Completo(volverCat);
-            }
+            if (isNaN(newVal) || newVal < 0) return alert('El stock debe ser un número mayor o igual a 0');
+            if (!prd) return alert('Producto no encontrado');
+            prd.stock = newVal;
+            window.saveERPData();
+            actualizarKPIs();
+            cerrarModal();
+            renderNivel2Completo(volverCat);
         };
-
+        
         const productosOriginales = window.erpDB.productos.filter(p => p.categoria === catName);
         const refMap = {};
-        
-        // Estructura de la categoría actual (fija las píldoras base aunque esten vacías)
         const catObj = window.erpDB.categoriasEstructura.find(c => c.nombre === catName);
         let subcatsArray = catObj ? catObj.subcategorias : [];
 
@@ -527,7 +540,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return 0;
         });
 
-        const filas = productosFiltrados.map(p => {
+        const ITEMS_PER_PAGE = 15;
+        const totalPages = Math.ceil(productosFiltrados.length / ITEMS_PER_PAGE);
+        window.pedidoPage = window.pedidoPage || 1;
+        if (window.pedidoPage > totalPages) window.pedidoPage = totalPages || 1;
+        const startIdx = (window.pedidoPage - 1) * ITEMS_PER_PAGE;
+        const paginatedItems = productosFiltrados.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+        const filas = paginatedItems.map(p => {
             const estadoClase = p.estado === 'disponible' ? 'success' : (p.estado === 'bajo' ? 'warning' : 'danger');
             return `
                 <tr>
@@ -600,6 +620,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     </tbody>
                 </table>
             </div>
+            ${totalPages > 1 ? `
+                <div class="pagination" style="display:flex;justify-content:center;gap:8px;margin-top:16px;align-items:center;">
+                    <button class="btn btn-secondary" onclick="window.pedidoPage--;renderNivel2Completo('${catName}')" ${window.pedidoPage <= 1 ? 'disabled' : ''}>&laquo; Anterior</button>
+                    <span style="font-size:14px;">Página ${window.pedidoPage} de ${totalPages}</span>
+                    <button class="btn btn-secondary" onclick="window.pedidoPage++;renderNivel2Completo('${catName}')" ${window.pedidoPage >= totalPages ? 'disabled' : ''}>Siguiente &raquo;</button>
+                </div>
+            ` : ''}
         `;
 
         // Renderizar mini charts post-DOM
@@ -632,9 +659,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         cutout: '60%', // hueco grande para ser un mini anillo
                         plugins: {
                             legend: { display: false },
-                            tooltip: { // Minimalista
+                            tooltip: {
                                 callbacks: {
-                                    label: function(context) { return ' ' + context.label + ': ' + context.raw; }
+                                    label: function(context) { return ` ${context.label}: ${context.raw}`; }
                                 }
                             }
                         }
@@ -716,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Crear incidencia
         const nuevaInc = {
-            id: 'INC-' + (window.erpDB.incidencias.length + 500),
+            id: window.generarIdUnico('INC'),
             fecha: new Date().toLocaleDateString('sv-SE'),
             categoria: 'Pedidos',
             prioridad: prio,
@@ -751,8 +778,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.simAddToCart = (id) => {
         const p = window.erpDB.productos.find(x => x.id === id);
-        if(!p) return;
+        if(!p) return alert('Producto no encontrado');
+        if(p.stock <= 0) return alert('Producto agotado');
         const exists = window.simuladorState.carrito.find(x => x.id === id);
+        const currentQty = exists ? exists.cantidad : 0;
+        if(currentQty >= p.stock) return alert(`Stock insuficiente. Disponible: ${p.stock}`);
         if(exists) exists.cantidad++;
         else window.simuladorState.carrito.push({ id: p.id, nombre: p.nombre, precioUnitario: p.precio, cantidad: 1 });
         window.renderSimUI();
@@ -779,16 +809,25 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ejecutarCompraSimulada = () => {
         if(window.simuladorState.carrito.length === 0) return alert('El carrito está vacío. Añade algún producto primero.');
         
+        // Validar stock antes de comprar
+        for(const item of window.simuladorState.carrito) {
+            const p = window.erpDB.productos.find(x => x.id === item.id);
+            if(!p || p.stock < item.cantidad) {
+                return alert(`Stock insuficiente para ${item.nombre}. Disponible: ${p ? p.stock : 0}`);
+            }
+        }
+
         let total = 0;
         const lineas = window.simuladorState.carrito.map(item => {
+            const p = window.erpDB.productos.find(x => x.id === item.id);
+            p.stock -= item.cantidad;
             total += item.precioUnitario * item.cantidad;
             return { nombre: item.nombre, cantidad: item.cantidad, precioUnitario: item.precioUnitario };
         });
 
-        const nextId = window.erpDB.pedidos.length + 1000;
         const nuevoPedido = {
-            id: 'PED-' + nextId,
-            fecha: new Date().toLocaleDateString('sv-SE'), // YYYY-MM-DD local
+            id: window.generarIdUnico('PED'),
+            fecha: new Date().toLocaleDateString('sv-SE'),
             cliente: window.simuladorState.cliente || 'Usuario App',
             monto: total,
             estado: 'pendiente',
@@ -1532,24 +1571,488 @@ document.addEventListener('DOMContentLoaded', () => {
         renderIncidenciasCategoria(catName);
     };
 
+    window.abrirModalNuevaTarea = () => {
+        const content = `
+            <div class="form-group">
+                <label>Título</label>
+                <input type="text" id="tarea-titulo" class="form-control" placeholder="Título de la tarea">
+            </div>
+            <div class="form-group">
+                <label>Descripción</label>
+                <textarea id="tarea-desc" class="form-control" rows="3" placeholder="Descripción..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Prioridad</label>
+                <select id="tarea-prioridad" class="form-control">
+                    <option value="Baja">Baja</option>
+                    <option value="Media" selected>Media</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Crítica">Crítica</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Fecha Límite</label>
+                <input type="date" id="tarea-fecha" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Asignar a</label>
+                <input type="text" id="tarea-asignado" class="form-control" placeholder="Nombre del responsable">
+            </div>
+            <button class="btn btn-primary" style="width:100%;" onclick="crearTarea()">Crear Tarea</button>
+        `;
+        abrirModal('Nueva Tarea', content);
+    };
+
+    window.abrirModalNuevoProveedor = () => {
+        const content = `
+            <div class="form-group">
+                <label>Nombre</label>
+                <input type="text" id="prov-nombre" class="form-control" placeholder="Nombre del proveedor">
+            </div>
+            <div class="form-group">
+                <label>Contacto</label>
+                <input type="text" id="prov-contacto" class="form-control" placeholder="Persona de contacto">
+            </div>
+            <div class="form-group">
+                <label>Teléfono</label>
+                <input type="text" id="prov-telefono" class="form-control" placeholder="+34 XXX XXX XXX">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="prov-email" class="form-control" placeholder="email@proveedor.es">
+            </div>
+            <div class="form-group">
+                <label>Dirección</label>
+                <input type="text" id="prov-direccion" class="form-control" placeholder="Dirección">
+            </div>
+            <div class="form-group">
+                <label>Categoría</label>
+                <select id="prov-categoria" class="form-control">
+                    <option value="Ordenadores">Ordenadores</option>
+                    <option value="Periféricos">Periféricos</option>
+                    <option value="Componentes">Componentes</option>
+                    <option value="Dispositivos Inteligentes">Dispositivos Inteligentes</option>
+                    <option value="Impresión Oficina">Impresión Oficina</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" style="width:100%;" onclick="crearProveedor()">Crear Proveedor</button>
+        `;
+        abrirModal('Nuevo Proveedor', content);
+    };
+
+    // --- Render Tareas ---
+    window.tareaPage = window.tareaPage || 1;
+    window.tareaFiltroEstado = window.tareaFiltroEstado || 'todas';
+    window.tareaFiltroPrioridad = window.tareaFiltroPrioridad || 'todas';
+
+    window.cambiarFiltroTareas = () => {
+        window.tareaFiltroEstado = document.getElementById('filt-tarea-estado').value;
+        window.tareaFiltroPrioridad = document.getElementById('filt-tarea-prioridad').value;
+        window.tareaPage = 1;
+        renderTareas();
+    };
+
+    window.crearTarea = () => {
+        const titulo = document.getElementById('tarea-titulo').value.trim();
+        const descripcion = document.getElementById('tarea-desc').value.trim();
+        const prioridad = document.getElementById('tarea-prioridad').value;
+        const fechaLimite = document.getElementById('tarea-fecha').value;
+        const asignadaA = document.getElementById('tarea-asignado').value.trim();
+
+        if(!titulo) return alert('El título es obligatorio');
+
+        window.erpDB.tareas.unshift({
+            id: window.generarIdUnico('TSK'),
+            titulo,
+            descripcion,
+            prioridad,
+            estado: 'pendiente',
+            fechaCreacion: new Date().toISOString().split('T')[0],
+            fechaLimite: fechaLimite || '',
+            asignadaA: asignadaA || 'Sin asignar'
+        });
+        window.saveERPData();
+        cerrarModal();
+        renderTareas();
+    };
+
+    window.editarTarea = (id) => {
+        const t = window.erpDB.tareas.find(x => x.id === id);
+        if(!t) return;
+        const content = `
+            <div class="form-group">
+                <label>Título</label>
+                <input type="text" id="edit-tarea-titulo" class="form-control" value="${t.titulo}">
+            </div>
+            <div class="form-group">
+                <label>Descripción</label>
+                <textarea id="edit-tarea-desc" class="form-control" rows="3">${t.descripcion}</textarea>
+            </div>
+            <div class="form-group">
+                <label>Prioridad</label>
+                <select id="edit-tarea-prioridad" class="form-control">
+                    <option value="Baja" ${t.prioridad === 'Baja' ? 'selected' : ''}>Baja</option>
+                    <option value="Media" ${t.prioridad === 'Media' ? 'selected' : ''}>Media</option>
+                    <option value="Alta" ${t.prioridad === 'Alta' ? 'selected' : ''}>Alta</option>
+                    <option value="Crítica" ${t.prioridad === 'Crítica' ? 'selected' : ''}>Crítica</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Estado</label>
+                <select id="edit-tarea-estado" class="form-control">
+                    <option value="pendiente" ${t.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                    <option value="en_progreso" ${t.estado === 'en_progreso' ? 'selected' : ''}>En Progreso</option>
+                    <option value="completada" ${t.estado === 'completada' ? 'selected' : ''}>Completada</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Fecha Límite</label>
+                <input type="date" id="edit-tarea-fecha" class="form-control" value="${t.fechaLimite}">
+            </div>
+            <div class="form-group">
+                <label>Asignada a</label>
+                <input type="text" id="edit-tarea-asignado" class="form-control" value="${t.asignadaA}">
+            </div>
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button class="btn btn-primary" onclick="guardarEditTarea('${t.id}')">Guardar Cambios</button>
+                <button class="btn btn-secondary" style="background:#ef4444;color:white;border:none;" onclick="eliminarTarea('${t.id}')">Eliminar</button>
+            </div>
+        `;
+        abrirModal('Editar Tarea', content);
+    };
+
+    window.guardarEditTarea = (id) => {
+        const t = window.erpDB.tareas.find(x => x.id === id);
+        if(!t) return;
+        t.titulo = document.getElementById('edit-tarea-titulo').value.trim();
+        t.descripcion = document.getElementById('edit-tarea-desc').value.trim();
+        t.prioridad = document.getElementById('edit-tarea-prioridad').value;
+        t.estado = document.getElementById('edit-tarea-estado').value;
+        t.fechaLimite = document.getElementById('edit-tarea-fecha').value;
+        t.asignadaA = document.getElementById('edit-tarea-asignado').value.trim();
+        window.saveERPData();
+        cerrarModal();
+        renderTareas();
+    };
+
+    window.eliminarTarea = (id) => {
+        if(!confirm('¿Estás seguro de eliminar esta tarea?')) return;
+        window.erpDB.tareas = window.erpDB.tareas.filter(x => x.id !== id);
+        window.saveERPData();
+        cerrarModal();
+        renderTareas();
+    };
+
+    function renderTareas() {
+        const role = roleSelect.value;
+        const isAdmin = role === 'gerente' || role === 'almacen';
+
+        let tareasFiltradas = window.erpDB.tareas;
+        if(window.tareaFiltroEstado !== 'todas') {
+            tareasFiltradas = tareasFiltradas.filter(t => t.estado === window.tareaFiltroEstado);
+        }
+        if(window.tareaFiltroPrioridad !== 'todas') {
+            tareasFiltradas = tareasFiltradas.filter(t => t.prioridad === window.tareaFiltroPrioridad);
+        }
+
+        const stats = {
+            pendiente: window.erpDB.tareas.filter(t => t.estado === 'pendiente').length,
+            en_progreso: window.erpDB.tareas.filter(t => t.estado === 'en_progreso').length,
+            completada: window.erpDB.tareas.filter(t => t.estado === 'completada').length
+        };
+
+        const ITEMS_PER_PAGE = 10;
+        const totalPages = Math.ceil(tareasFiltradas.length / ITEMS_PER_PAGE);
+        if(window.tareaPage > totalPages) window.tareaPage = totalPages || 1;
+        const startIdx = (window.tareaPage - 1) * ITEMS_PER_PAGE;
+        const paginatedTareas = tareasFiltradas.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+        const prioridadColor = { 'Baja': '#00e676', 'Media': '#ffb300', 'Alta': '#ff6b35', 'Crítica': '#ff3d71' };
+        const estadoIcon = { 'pendiente': 'ph-clock', 'en_progreso': 'ph-play-circle', 'completada': 'ph-check-circle' };
+
+        const filas = paginatedTareas.map(t => `
+            <tr style="transition:background 0.2s;cursor:pointer;" onclick="editarTarea('${t.id}')">
+                <td style="font-weight:600;color:var(--primary);">${t.id}</td>
+                <td><b>${t.titulo}</b><br/><span style="font-size:12px;color:var(--text-muted);">${t.descripcion.substring(0, 50)}${t.descripcion.length > 50 ? '...' : ''}</span></td>
+                <td><span style="background:${prioridadColor[t.prioridad]};color:white;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;">${t.prioridad}</span></td>
+                <td><i class="ph ${estadoIcon[t.estado]}" style="font-size:18px;color:${t.estado === 'completada' ? '#00e676' : (t.estado === 'en_proceso' ? '#4d7cff' : '#ffb300')};"></i> ${t.estado.replace('_', ' ')}</td>
+                <td>${t.fechaLimite || '-'}</td>
+                <td>${t.asignadaA}</td>
+            </tr>
+        `).join('');
+
+        viewContainer.innerHTML = `
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title">Gestión de Tareas</h1>
+                    <p class="view-subtitle">Seguimiento de tareas internas del equipo</p>
+                </div>
+                ${isAdmin ? `<button class="btn btn-primary" onclick="window.abrirModalNuevaTarea()"><i class="ph ph-plus"></i> Nueva Tarea</button>` : ''}
+            </div>
+
+            <div class="card-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="kpi-card" style="border-left: 4px solid #ffb300">
+                    <div class="kpi-header"><span style="color:var(--text-muted);">Pendientes</span><i class="ph ph-clock text-warning"></i></div>
+                    <div class="kpi-value text-warning">${stats.pendiente}</div>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid #4d7cff">
+                    <div class="kpi-header"><span style="color:var(--text-muted);">En Progreso</span><i class="ph ph-play-circle text-primary"></i></div>
+                    <div class="kpi-value text-primary">${stats.en_progreso}</div>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid #00e676">
+                    <div class="kpi-header"><span style="color:var(--text-muted);">Completadas</span><i class="ph ph-check-circle text-success"></i></div>
+                    <div class="kpi-value text-success">${stats.completada}</div>
+                </div>
+            </div>
+
+            <div class="table-toolbar" style="margin-top:16px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="ph ph-funnel" style="font-size:18px;"></i>
+                    <select id="filt-tarea-estado" class="form-control" onchange="cambiarFiltroTareas()">
+                        <option value="todas" ${window.tareaFiltroEstado === 'todas' ? 'selected' : ''}>Todos los estados</option>
+                        <option value="pendiente" ${window.tareaFiltroEstado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                        <option value="en_progreso" ${window.tareaFiltroEstado === 'en_progreso' ? 'selected' : ''}>En Progreso</option>
+                        <option value="completada" ${window.tareaFiltroEstado === 'completada' ? 'selected' : ''}>Completada</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="ph ph-warning" style="font-size:18px;"></i>
+                    <select id="filt-tarea-prioridad" class="form-control" onchange="cambiarFiltroTareas()">
+                        <option value="todas" ${window.tareaFiltroPrioridad === 'todas' ? 'selected' : ''}>Todas las prioridades</option>
+                        <option value="Baja" ${window.tareaFiltroPrioridad === 'Baja' ? 'selected' : ''}>Baja</option>
+                        <option value="Media" ${window.tareaFiltroPrioridad === 'Media' ? 'selected' : ''}>Media</option>
+                        <option value="Alta" ${window.tareaFiltroPrioridad === 'Alta' ? 'selected' : ''}>Alta</option>
+                        <option value="Crítica" ${window.tareaFiltroPrioridad === 'Crítica' ? 'selected' : ''}>Crítica</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container" style="margin-top:16px;">
+                <table>
+                    <thead><tr><th>ID</th><th>Tarea</th><th>Prioridad</th><th>Estado</th><th>Fecha Límite</th><th>Asignada a</th></tr></thead>
+                    <tbody>${filas.length > 0 ? filas : '<tr><td colspan="6" style="text-align:center;padding:32px;">No hay tareas con los filtros seleccionados</td></tr>'}</tbody>
+                </table>
+                ${totalPages > 1 ? `
+                    <div class="pagination" style="display:flex;justify-content:center;gap:8px;margin-top:16px;align-items:center;">
+                        <button class="btn btn-secondary" onclick="window.tareaPage--;renderTareas()" ${window.tareaPage <= 1 ? 'disabled' : ''}>&laquo; Anterior</button>
+                        <span style="font-size:14px;">Página ${window.tareaPage} de ${totalPages}</span>
+                        <button class="btn btn-secondary" onclick="window.tareaPage++;renderTareas()" ${window.tareaPage >= totalPages ? 'disabled' : ''}>Siguiente &raquo;</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // --- Render Proveedores ---
+    window.provPage = window.provPage || 1;
+    window.provFiltroCat = window.provFiltroCat || 'todas';
+
+    window.cambiarFiltroProveedores = () => {
+        window.provFiltroCat = document.getElementById('filt-prov-cat').value;
+        window.provPage = 1;
+        renderProveedores();
+    };
+
+    window.crearProveedor = () => {
+        const nombre = document.getElementById('prov-nombre').value.trim();
+        const contacto = document.getElementById('prov-contacto').value.trim();
+        const telefono = document.getElementById('prov-telefono').value.trim();
+        const email = document.getElementById('prov-email').value.trim();
+        const direccion = document.getElementById('prov-direccion').value.trim();
+        const categoria = document.getElementById('prov-categoria').value;
+
+        if(!nombre) return alert('El nombre es obligatorio');
+
+        window.erpDB.proveedores.unshift({
+            id: window.generarIdUnico('PROV'),
+            nombre,
+            contacto,
+            telefono,
+            email,
+            direccion,
+            categoria,
+            pedidosPendientes: 0,
+            ultimaEntrega: '-',
+            historialEntregas: []
+        });
+        window.saveERPData();
+        cerrarModal();
+        renderProveedores();
+    };
+
+    window.editarProveedor = (id) => {
+        const p = window.erpDB.proveedores.find(x => x.id === id);
+        if(!p) return;
+        const content = `
+            <div class="form-group">
+                <label>Nombre</label>
+                <input type="text" id="edit-prov-nombre" class="form-control" value="${p.nombre}">
+            </div>
+            <div class="form-group">
+                <label>Contacto</label>
+                <input type="text" id="edit-prov-contacto" class="form-control" value="${p.contacto}">
+            </div>
+            <div class="form-group">
+                <label>Teléfono</label>
+                <input type="text" id="edit-prov-telefono" class="form-control" value="${p.telefono}">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="edit-prov-email" class="form-control" value="${p.email}">
+            </div>
+            <div class="form-group">
+                <label>Dirección</label>
+                <input type="text" id="edit-prov-direccion" class="form-control" value="${p.direccion}">
+            </div>
+            <div class="form-group">
+                <label>Categoría</label>
+                <select id="edit-prov-categoria" class="form-control">
+                    <option value="Ordenadores" ${p.categoria === 'Ordenadores' ? 'selected' : ''}>Ordenadores</option>
+                    <option value="Periféricos" ${p.categoria === 'Periféricos' ? 'selected' : ''}>Periféricos</option>
+                    <option value="Componentes" ${p.categoria === 'Componentes' ? 'selected' : ''}>Componentes</option>
+                    <option value="Dispositivos Inteligentes" ${p.categoria === 'Dispositivos Inteligentes' ? 'selected' : ''}>Dispositivos Inteligentes</option>
+                    <option value="Impresión Oficina" ${p.categoria === 'Impresión Oficina' ? 'selected' : ''}>Impresión Oficina</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button class="btn btn-primary" onclick="guardarEditProveedor('${p.id}')">Guardar Cambios</button>
+                <button class="btn btn-secondary" style="background:#ef4444;color:white;border:none;" onclick="eliminarProveedor('${p.id}')">Eliminar</button>
+            </div>
+        `;
+        abrirModal('Editar Proveedor', content);
+    };
+
+    window.guardarEditProveedor = (id) => {
+        const p = window.erpDB.proveedores.find(x => x.id === id);
+        if(!p) return;
+        p.nombre = document.getElementById('edit-prov-nombre').value.trim();
+        p.contacto = document.getElementById('edit-prov-contacto').value.trim();
+        p.telefono = document.getElementById('edit-prov-telefono').value.trim();
+        p.email = document.getElementById('edit-prov-email').value.trim();
+        p.direccion = document.getElementById('edit-prov-direccion').value.trim();
+        p.categoria = document.getElementById('edit-prov-categoria').value;
+        window.saveERPData();
+        cerrarModal();
+        renderProveedores();
+    };
+
+    window.eliminarProveedor = (id) => {
+        if(!confirm('¿Estás seguro de eliminar este proveedor?')) return;
+        window.erpDB.proveedores = window.erpDB.proveedores.filter(x => x.id !== id);
+        window.saveERPData();
+        cerrarModal();
+        renderProveedores();
+    };
+
+    window.registrarEntrega = (id) => {
+        const p = window.erpDB.proveedores.find(x => x.id === id);
+        if(!p) return;
+        const fechaActual = new Date().toISOString().split('T')[0];
+        p.ultimaEntrega = fechaActual;
+        p.historialEntregas.unshift(fechaActual);
+        if(p.pedidosPendientes > 0) p.pedidosPendientes--;
+        window.saveERPData();
+        renderProveedores();
+    };
+
     function renderProveedores() {
+        const role = roleSelect.value;
+        const isAdmin = role === 'gerente';
+
+        let proveedoresFiltrados = window.erpDB.proveedores;
+        if(window.provFiltroCat !== 'todas') {
+            proveedoresFiltrados = proveedoresFiltrados.filter(p => p.categoria === window.provFiltroCat);
+        }
+
+        const stats = {
+            total: window.erpDB.proveedores.length,
+            pedidosPendientes: window.erpDB.proveedores.reduce((acc, p) => acc + p.pedidosPendientes, 0),
+            categorias: [...new Set(window.erpDB.proveedores.map(p => p.categoria))].length
+        };
+
+        const categoriasUnicas = [...new Set(window.erpDB.proveedores.map(p => p.categoria))];
+
+        const ITEMS_PER_PAGE = 8;
+        const totalPages = Math.ceil(proveedoresFiltrados.length / ITEMS_PER_PAGE);
+        if(window.provPage > totalPages) window.provPage = totalPages || 1;
+        const startIdx = (window.provPage - 1) * ITEMS_PER_PAGE;
+        const paginatedProv = proveedoresFiltrados.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+        const cards = paginatedProv.map(p => `
+            <div class="kpi-card" style="cursor:pointer;" onclick="editarProveedor('${p.id}')">
+                <div class="kpi-header">
+                    <span style="font-size:16px;font-weight:bold;">${p.nombre}</span>
+                    <i class="ph ph-truck" style="color:var(--primary);"></i>
+                </div>
+                <div style="margin-top:12px;">
+                    <p style="font-size:13px;margin:4px 0;"><i class="ph ph-user" style="margin-right:8px;"></i>${p.contacto}</p>
+                    <p style="font-size:13px;margin:4px 0;"><i class="ph ph-phone" style="margin-right:8px;"></i>${p.telefono}</p>
+                    <p style="font-size:13px;margin:4px 0;"><i class="ph ph-envelope" style="margin-right:8px;"></i>${p.email}</p>
+                    <p style="font-size:13px;margin:4px 0;"><i class="ph ph-map-pin" style="margin-right:8px;"></i>${p.direccion}</p>
+                </div>
+                <div style="margin-top:16px;padding:12px;background:var(--bg-color);border-radius:8px;">
+                    <span style="font-size:12px;color:var(--text-muted);">Categoría</span>
+                    <div style="font-weight:600;margin-top:4px;">${p.categoria}</div>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:12px;">
+                    <div style="text-align:center;">
+                        <div style="font-size:24px;font-weight:bold;color:var(--warning);">${p.pedidosPendientes}</div>
+                        <span style="font-size:11px;color:var(--text-muted);">Pedidos Pend.</span>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:24px;font-weight:bold;color:var(--text-main);">${p.ultimaEntrega}</div>
+                        <span style="font-size:11px;color:var(--text-muted);">Última Entrega</span>
+                    </div>
+                </div>
+                ${p.pedidosPendientes > 0 ? `<button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="event.stopPropagation();registrarEntrega('${p.id}')"><i class="ph ph-check"></i> Registrar Entrega</button>` : ''}
+            </div>
+        `).join('');
+
         viewContainer.innerHTML = `
             <div class="view-header">
                 <div>
                     <h1 class="view-title">Proveedores y Reposición</h1>
-                    <p class="view-subtitle">Gestión de remesas en tránsito</p>
+                    <p class="view-subtitle">Gestión de proveedores y pedidos de reposición</p>
+                </div>
+                ${isAdmin ? `<button class="btn btn-primary" onclick="window.abrirModalNuevoProveedor()"><i class="ph ph-plus"></i> Nuevo Proveedor</button>` : ''}
+            </div>
+
+            <div class="card-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="kpi-card" style="border-left: 4px solid #4d7cff">
+                    <div class="kpi-header"><span style="color:var(--text-muted);">Total Proveedores</span><i class="ph ph-truck text-primary"></i></div>
+                    <div class="kpi-value text-primary">${stats.total}</div>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid #ffb300">
+                    <div class="kpi-header"><span style="color:var(--text-muted);">Pedidos Pendientes</span><i class="ph ph-clock text-warning"></i></div>
+                    <div class="kpi-value text-warning">${stats.pedidosPendientes}</div>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid #00e676">
+                    <div class="kpi-header"><span style="color:var(--text-muted);">Categorías</span><i class="ph ph-tag text-success"></i></div>
+                    <div class="kpi-value text-success">${stats.categorias}</div>
                 </div>
             </div>
-            <div class="card-grid">
-                <div class="kpi-card" style="align-items:center; justify-content:center; text-align:center; min-height:200px">
-                    <i class="ph ph-truck text-warning" style="font-size: 48px; margin-bottom: 16px;"></i>
-                    <h3>Proveedor A en Tránsito</h3>
-                    <p class="view-subtitle" style="margin-top:8px;">Llegada: Hoy 16:00</p>
-                    <div class="progress-container" style="width: 80%; margin: 16px auto;"><div class="progress-bar" style="width: 75%; background-color: var(--warning);"></div></div>
-                    <span style="font-size:12px; color:var(--text-muted);">Progreso del envío (75%)</span>
-                    <button class="btn btn-primary" style="margin-top:16px;">Validar Entrada</button>
+
+            <div class="table-toolbar" style="margin-top:16px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="ph ph-funnel" style="font-size:18px;"></i>
+                    <select id="filt-prov-cat" class="form-control" onchange="cambiarFiltroProveedores()">
+                        <option value="todas" ${window.provFiltroCat === 'todas' ? 'selected' : ''}>Todas las categorías</option>
+                        ${categoriasUnicas.map(c => `<option value="${c}" ${window.provFiltroCat === c ? 'selected' : ''}>${c}</option>`).join('')}
+                    </select>
                 </div>
             </div>
+
+            <div class="card-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); margin-top:16px;">
+                ${cards.length > 0 ? cards : '<div style="grid-column:1/-1;text-align:center;padding:32px;">No hay proveedores</div>'}
+            </div>
+
+            ${totalPages > 1 ? `
+                <div class="pagination" style="display:flex;justify-content:center;gap:8px;margin-top:24px;align-items:center;">
+                    <button class="btn btn-secondary" onclick="window.provPage--;renderProveedores()" ${window.provPage <= 1 ? 'disabled' : ''}>&laquo; Anterior</button>
+                    <span style="font-size:14px;">Página ${window.provPage} de ${totalPages}</span>
+                    <button class="btn btn-secondary" onclick="window.provPage++;renderProveedores()" ${window.provPage >= totalPages ? 'disabled' : ''}>Siguiente &raquo;</button>
+                </div>
+            ` : ''}
         `;
     }
 
@@ -1562,14 +2065,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const facturasCompletadas = window.erpDB.pedidos.filter(p => p.estado === 'completado');
         const ingresosBrutos = facturasCompletadas.reduce((acc, p) => acc + p.monto, 0);
-        const impuestos = ingresosBrutos * 0.21; // 21% IVA
-        const totalGastosFijos = 45000; // Estático para simulación
-
+        const impuestos = ingresosBrutos * 0.21;
+        const totalGastosFijos = 45000;
         const beneficioNeto = ingresosBrutos - impuestos - totalGastosFijos;
 
-        const filasFacturas = facturasCompletadas.slice(0, 10).map(f => `
+        const ITEMS_PER_PAGE = 10;
+        window.finanzasPage = window.finanzasPage || 1;
+        const totalPages = Math.ceil(facturasCompletadas.length / ITEMS_PER_PAGE);
+        if (window.finanzasPage > totalPages) window.finanzasPage = totalPages || 1;
+        const startIdx = (window.finanzasPage - 1) * ITEMS_PER_PAGE;
+        const paginatedFacturas = facturasCompletadas.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+        const filasFacturas = paginatedFacturas.map(f => `
             <tr style="transition: background 0.2s;" onmouseover="this.style.background='rgba(99, 102, 241, 0.05)'" onmouseout="this.style.background='transparent'">
-                <td style="font-weight: 600; color:var(--primary);">FAC-${f.id.split('-')[1]}</td>
+                <td style="font-weight: 600; color:var(--primary);">FAC-${f.id.split('-')[1] || f.id.slice(-4)}</td>
                 <td><span style="font-size:12px;color:var(--text-muted);display:block;">Ref.</span>${f.id}</td>
                 <td>${f.fecha}</td>
                 <td><b>${f.cliente}</b></td>
@@ -1577,6 +2086,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><span style="background:var(--success);color:white;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;">COBRADA</span></td>
             </tr>
         `).join('');
+
+        const textColor = htmlElement.getAttribute('data-theme') === 'dark' ? '#f3f4f6' : '#111827';
 
         viewContainer.innerHTML = `
             <div class="view-header">
@@ -1607,6 +2118,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
 
+            <div class="card-grid" style="grid-template-columns: 1fr 1fr; margin-top: 16px;">
+                <div class="kpi-card">
+                    <h3 style="margin-bottom:16px;">Ingresos vs Gastos</h3>
+                    <div class="chart-container"><canvas id="finanzasChart"></canvas></div>
+                </div>
+                <div class="kpi-card">
+                    <h3 style="margin-bottom:16px;">Facturación Reciente</h3>
+                    <div class="chart-container"><canvas id="facturasChart"></canvas></div>
+                </div>
+            </div>
+
             <div class="table-container" style="margin-top: 24px;">
                 <div style="padding: 16px 24px; border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background: rgba(0,0,0,0.01);">
                     <div>
@@ -1618,8 +2140,58 @@ document.addEventListener('DOMContentLoaded', () => {
                     <thead><tr><th>ID Factura</th><th>Ref. Albarán</th><th>Fecha Emisión</th><th>Cliente Pyme</th><th>Monto Total</th><th>Estado Contable</th></tr></thead>
                     <tbody>${filasFacturas}</tbody>
                 </table>
+                ${totalPages > 1 ? `
+                    <div class="pagination" style="display:flex;justify-content:center;gap:8px;margin-top:16px;align-items:center;padding:16px;">
+                        <button class="btn btn-secondary" onclick="window.finanzasPage--;renderView('finanzas')" ${window.finanzasPage <= 1 ? 'disabled' : ''}>&laquo; Anterior</button>
+                        <span style="font-size:14px;">Página ${window.finanzasPage} de ${totalPages}</span>
+                        <button class="btn btn-secondary" onclick="window.finanzasPage++;renderView('finanzas')" ${window.finanzasPage >= totalPages ? 'disabled' : ''}>Siguiente &raquo;</button>
+                    </div>
+                ` : ''}
             </div>
         `;
+
+        setTimeout(() => {
+            const ctxF = document.getElementById('finanzasChart');
+            if(ctxF) {
+                new Chart(ctxF.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Ingresos Brutos', 'IVA (21%)', 'Gastos Fijos'],
+                        datasets: [{
+                            data: [ingresosBrutos, impuestos, totalGastosFijos],
+                            backgroundColor: ['#00e676', '#ff3d71', '#4d7cff'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: textColor } } } }
+                });
+            }
+            const ctxFa = document.getElementById('facturasChart');
+            if(ctxFa) {
+                const ultimosMeses = {};
+                facturasCompletadas.slice(0, 20).forEach(p => {
+                    const mes = p.fecha.substring(0, 7);
+                    ultimosMeses[mes] = (ultimosMeses[mes] || 0) + p.monto;
+                });
+                const sortedMeses = Object.keys(ultimosMeses).sort().slice(-6);
+                new Chart(ctxFa.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: sortedMeses,
+                        datasets: [{
+                            label: 'Facturación',
+                            data: sortedMeses.map(m => ultimosMeses[m]),
+                            backgroundColor: '#4d7cff'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { y: { ticks: { color: textColor }, grid: { color: '#e5e7eb' } }, x: { ticks: { color: textColor }, grid: { display: false } } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+        }, 100);
     }
 
     // Iniciar

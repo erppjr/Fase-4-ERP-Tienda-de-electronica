@@ -69,7 +69,7 @@ const defaultDB = {
         { id: 'PRD-048', nombre: 'Sistema Refrigeración Líquida 240mm', categoria: 'Componentes', subcategoria: 'Refrigeración', marca: 'Cooler Master', stock: 10, estado: 'bajo', ubicacion: 'Pasillo 6', precio: 95 },
         { id: 'PRD-049', nombre: 'Ventilador Caja 120mm RGB', categoria: 'Componentes', subcategoria: 'Refrigeración', marca: 'Corsair', stock: 80, estado: 'disponible', ubicacion: 'Pasillo 6', precio: 25 },
         { id: 'PRD-050', nombre: 'Fuente Alimentación 850W 80+ Gold', categoria: 'Componentes', subcategoria: 'Cajas y Fuentes', marca: 'Seasonic', stock: 15, estado: 'disponible', ubicacion: 'Pasillo 5', precio: 135 },
-        { id: 'PRD-051', semt: 'Caja ATX Cristal Templado', categoria: 'Componentes', subcategoria: 'Cajas y Fuentes', marca: 'NZXT', stock: 11, estado: 'bajo', ubicacion: 'Almacén B', precio: 89 },
+        { id: 'PRD-051', nombre: 'Caja ATX Cristal Templado', categoria: 'Componentes', subcategoria: 'Cajas y Fuentes', marca: 'NZXT', stock: 11, estado: 'bajo', ubicacion: 'Almacén B', precio: 89 },
         { id: 'PRD-052', nombre: 'Repetidor Mesh WiFi 6 (Pack 2)', categoria: 'Componentes', subcategoria: 'Redes', marca: 'TP-Link', stock: 25, estado: 'disponible', ubicacion: 'Pasillo 6', precio: 120 }
     ],
     pedidos: [
@@ -105,6 +105,26 @@ const defaultDB = {
         { id: 'ALT-1', mensaje: 'Stock crítico: Monitor Gaming 27" 144Hz (PRD-004)', tipo: 'danger' },
         { id: 'ALT-2', mensaje: 'Incidencia abierta en pedido PED-1024', tipo: 'warning' },
         { id: 'ALT-3', mensaje: 'Llegada programada Proveedor Hardware - Hoy 16:00', tipo: 'info' }
+    ],
+    tareas: [
+        { id: 'TSK-001', titulo: 'Revisar stock monitores', descripcion: 'Verificar existencias de monitores en almacén B', prioridad: 'Alta', estado: 'pendiente', fechaCreacion: '2026-04-10', fechaLimite: '2026-04-20', asignadaA: 'Juan Pérez' },
+        { id: 'TSK-002', titulo: 'Actualizar precios proveedores', descripcion: 'Revisar y actualizar precios de componentes con proveedores', prioridad: 'Media', estado: 'en_progreso', fechaCreacion: '2026-04-11', fechaLimite: '2026-04-25', asignadaA: 'María Gómez' },
+        { id: 'TSK-003', titulo: 'Organizar exposición productos', descripcion: 'Reordenar zona de exposición de portátiles', prioridad: 'Baja', estado: 'completada', fechaCreacion: '2026-04-08', fechaLimite: '2026-04-15', asignadaA: 'Carlos Ruiz' },
+        { id: 'TSK-004', titulo: 'Audit inventory', descripcion: 'Realizar inventario físico completo de almacén principal', prioridad: 'Crítica', estado: 'pendiente', fechaCreacion: '2026-04-12', fechaLimite: '2026-04-18', asignadaA: 'Ana Santos' },
+        { id: 'TSK-005', titulo: 'Gestionar devoluciones', descripcion: 'Procesar devoluciones de pedidos de la semana pasada', prioridad: 'Alta', estado: 'en_progreso', fechaCreacion: '2026-04-13', fechaLimite: '2026-04-17', asignadaA: 'Roberto Blanco' },
+        { id: 'TSK-006', titulo: 'Formación nuevo empleado', descripcion: 'Capacitar al nuevo empleado en sistema de gestión', prioridad: 'Media', estado: 'pendiente', fechaCreacion: '2026-04-14', fechaLimite: '2026-04-30', asignadaA: 'Laura Gómez' },
+        { id: 'TSK-007', titulo: 'Mantenimiento equipos', descripcion: 'Revisar estado de cajas registradoras y terminales', prioridad: 'Baja', estado: 'completada', fechaCreacion: '2026-04-05', fechaLimite: '2026-04-12', asignadaA: 'Miguel Ángel' },
+        { id: 'TSK-008', titulo: 'Preparar pedido B2B grande', descripcion: 'Preparar pedido para Tech Solutions S.L.', prioridad: 'Alta', estado: 'pendiente', fechaCreacion: '2026-04-15', fechaLimite: '2026-04-16', asignadaA: 'Pedro Martínez' }
+    ],
+    proveedores: [
+        { id: 'PROV-001', nombre: 'TechWorld Distributors', contacto: 'Javier Martínez', telefono: '+34 612 345 678', email: 'javier@techworld.es', direccion: 'C/ Mayor 123, Madrid', categoria: 'Componentes', pedidosPendientes: 2, ultimaEntrega: '2026-04-10', historialEntregas: ['2026-04-10', '2026-03-28', '2026-03-15'] },
+        { id: 'PROV-002', nombre: 'Global Electronics', contacto: 'Silvia Torres', telefono: '+34 654 987 321', email: 'silvia@globalelec.com', direccion: 'Av. Barcelona 45, Barcelona', categoria: 'Periféricos', pedidosPendientes: 1, ultimaEntrega: '2026-04-08', historialEntregas: ['2026-04-08', '2026-03-25', '2026-03-10'] },
+        { id: 'PROV-003', nombre: 'Apple Partner Spain', contacto: 'David López', telefono: '+34 611 222 333', email: 'david@applepartner.es', direccion: 'C/ Serrano 78, Madrid', categoria: 'Dispositivos Inteligentes', pedidosPendientes: 0, ultimaEntrega: '2026-04-12', historialEntregas: ['2026-04-12', '2026-03-30', '2026-03-15'] },
+        { id: 'PROV-004', nombre: 'HP Distribution Center', contacto: 'Elena Ruiz', telefono: '+34 633 444 555', email: 'elena@hpdistri.es', direccion: 'Polígono Industrial, Valencia', categoria: 'Impresión Oficina', pedidosPendientes: 3, ultimaEntrega: '2026-04-05', historialEntregas: ['2026-04-05', '2026-03-20', '2026-03-05'] },
+        { id: 'PROV-005', nombre: 'Samsung Electronics ES', contacto: 'Carlos García', telefono: '+34 622 111 222', email: 'carlos@samsung.es', direccion: 'C/ Gran Vía 56, Madrid', categoria: 'Dispositivos Inteligentes', pedidosPendientes: 1, ultimaEntrega: '2026-04-11', historialEntregas: ['2026-04-11', '2026-03-28', '2026-03-12'] },
+        { id: 'PROV-006', nombre: 'Logitech Partner', contacto: 'Patricia Sánchez', telefono: '+34 644 333 444', email: 'patricia@logitechpartner.es', direccion: 'Av. Francia 23, Valencia', categoria: 'Periféricos', pedidosPendientes: 0, ultimaEntrega: '2026-04-09', historialEntregas: ['2026-04-09', '2026-03-26', '2026-03-11'] },
+        { id: 'PROV-007', nombre: 'ASUS Premium Reseller', contacto: 'Miguel Fernández', telefono: '+34 655 666 777', email: 'miguel@asuspremium.es', direccion: 'C/ Alcalá 89, Madrid', categoria: 'Ordenadores', pedidosPendientes: 2, ultimaEntrega: '2026-04-07', historialEntregas: ['2026-04-07', '2026-03-24', '2026-03-08'] },
+        { id: 'PROV-008', nombre: 'Xiaomi Tech Distribution', contacto: 'Laura Martínez', telefono: '+34 677 888 999', email: 'laura@xiaomitech.es', direccion: 'Polígono Tech, Sevilla', categoria: 'Dispositivos Inteligentes', pedidosPendientes: 1, ultimaEntrega: '2026-04-13', historialEntregas: ['2026-04-13', '2026-04-01', '2026-03-18'] }
     ]
 };
 
@@ -126,8 +146,8 @@ if (defaultDB.pedidos.length < 50) {
     }
 }
 
-// Incrementamos a V8 para resetear el Storage e integrar el nuevo sistema de incidencias categorizadas.
-const savedData = localStorage.getItem('erp_data_v8'); 
+// Incrementamos a V9 para incluir Tareas y Proveedores.
+const savedData = localStorage.getItem('erp_data_v9'); 
 let DB;
 
 if (savedData) {
@@ -142,16 +162,17 @@ if (savedData) {
     localStorage.removeItem('erp_data_v5'); 
     localStorage.removeItem('erp_data_v6'); 
     localStorage.removeItem('erp_data_v7'); 
-    localStorage.setItem('erp_data_v8', JSON.stringify(DB));
+    localStorage.removeItem('erp_data_v8'); 
+    localStorage.setItem('erp_data_v9', JSON.stringify(DB));
 }
 
 // Helpers
 window.saveERPData = function() {
-    localStorage.setItem('erp_data_v8', JSON.stringify(window.erpDB));
+    localStorage.setItem('erp_data_v9', JSON.stringify(window.erpDB));
 };
 
 window.resetERPData = function() {
-    localStorage.removeItem('erp_data_v8');
+    localStorage.removeItem('erp_data_v9');
     location.reload();
 };
 
