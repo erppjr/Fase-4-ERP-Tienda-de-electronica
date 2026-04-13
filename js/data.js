@@ -101,6 +101,17 @@ const defaultDB = {
         { id: 'INC-004', fecha: '2026-04-12', categoria: 'Local', prioridad: 'Baja', titulo: 'Climatización Sala 2', descripcion: 'El aire acondicionado de la sala de servidores hace un ruido inusual.', estado: 'abierta' },
         { id: 'INC-005', fecha: '2026-04-12', categoria: 'App', prioridad: 'Alta', titulo: 'Lentitud en Checkout', descripcion: 'Varios usuarios reportan que el simulador B2C tarda en procesar el pago.', estado: 'abierta' }
     ],
+    proveedores: [
+        { id: 'PROV-1', nombre: 'Global Hardware S.A.', contacto: 'Andrés Valencia', email: 'vientos@globalhw.com', categorias: ['Componentes', 'Ordenadores'], logo: '🏢' },
+        { id: 'PROV-2', nombre: 'Periféricos Extreme', contacto: 'Elena Marcos', email: 'contacto@extreme.com', categorias: ['Periféricos'], logo: '🖱️' },
+        { id: 'PROV-3', nombre: 'Digital Solutions', contacto: 'Marcos Portillo', email: 'info@digitalsolutions.com', categorias: ['Dispositivos Inteligentes', 'Ordenadores'], logo: '📱' },
+        { id: 'PROV-4', nombre: 'Office Logistics', contacto: 'Clara Soto', email: 'logistica@office.com', categorias: ['Impresión Oficina'], logo: '🖨️' }
+    ],
+    pedidosProveedor: [
+        { id: 'ORD-501', proveedorId: 'PROV-1', fecha: '2026-04-05', monto: 12500, estado: 'completado', lineas: [{nombre: 'Tarjeta Gráfica RTX 4060 Ti', cantidad: 20, precioUnitario: 450}] },
+        { id: 'ORD-502', proveedorId: 'PROV-2', fecha: '2026-04-12', monto: 2400, estado: 'en_camino', lineas: [{nombre: 'Monitor Gaming 27" 144Hz', cantidad: 10, precioUnitario: 240}] },
+        { id: 'ORD-503', proveedorId: 'PROV-3', fecha: '2026-04-13', monto: 5000, estado: 'solicitado', lineas: [{nombre: 'Smartphone X Pro 128GB', cantidad: 8, precioUnitario: 625}] }
+    ],
     alertas: [
         { id: 'ALT-1', mensaje: 'Stock crítico: Monitor Gaming 27" 144Hz (PRD-004)', tipo: 'danger' },
         { id: 'ALT-2', mensaje: 'Incidencia abierta en pedido PED-1024', tipo: 'warning' },
@@ -126,8 +137,8 @@ if (defaultDB.pedidos.length < 50) {
     }
 }
 
-// Incrementamos a V8 para resetear el Storage e integrar el nuevo sistema de incidencias categorizadas.
-const savedData = localStorage.getItem('erp_data_v8'); 
+// Incrementamos a V9 para el nuevo sistema de proveedores.
+const savedData = localStorage.getItem('erp_data_v9'); 
 let DB;
 
 if (savedData) {
@@ -142,7 +153,8 @@ if (savedData) {
     localStorage.removeItem('erp_data_v5'); 
     localStorage.removeItem('erp_data_v6'); 
     localStorage.removeItem('erp_data_v7'); 
-    localStorage.setItem('erp_data_v8', JSON.stringify(DB));
+    localStorage.removeItem('erp_data_v8'); 
+    localStorage.setItem('erp_data_v9', JSON.stringify(DB));
 }
 
 // Helpers
@@ -164,7 +176,7 @@ window.recalcularKPIs = function() {
     
     window.erpDB.productos.forEach(p => {
         if (p.stock <= 0) p.estado = 'agotado';
-        else if (p.stock < 15) p.estado = 'bajo';
+        else if (p.stock <= 5) p.estado = 'bajo';
         else p.estado = 'disponible';
     });
 

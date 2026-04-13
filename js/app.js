@@ -356,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="view-header">
                 <div>
                     <h1 class="view-title">Categorías de Inventario</h1>
-                    <p class="view-subtitle">Estructura B2B y Distribución del stock</p>
+                    <p class="view-subtitle">Distribución del stock</p>
                 </div>
                 ${isAdmin ? `<button class="btn btn-secondary" onclick="abrirGestionEstructura()"><i class="ph ph-sliders"></i> Gestor de Categorías</button>` : ''}
             </div>
@@ -951,9 +951,9 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="view-header">
                 <div>
                     <h1 class="view-title">Dashboard Analítico de Pedidos</h1>
-                    <p class="view-subtitle">Monitor de envíos y embudo logístico B2B</p>
+                    <p class="view-subtitle">Monitor de envíos</p>
                 </div>
-                <button class="btn btn-primary" onclick="window.abrirSimuladorMobile()" style="background: linear-gradient(135deg, #6366f1, #a855f7); border:none; border-radius:30px; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4); padding: 10px 24px; font-weight:bold; letter-spacing:0.5px;"><i class="ph ph-device-mobile"></i> Simulador B2C</button>
+                <button class="btn btn-primary" onclick="window.abrirSimuladorMobile()" style="background: linear-gradient(135deg, #6366f1, #a855f7); border:none; border-radius:30px; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4); padding: 10px 24px; font-weight:bold; letter-spacing:0.5px;"><i class="ph ph-device-mobile"></i> Simulador App</button>
             </div>
             
             <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
@@ -1102,9 +1102,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 100);
     }
 
+    window.setPedidosOrigen = (origen, estado) => {
+        window.pedidosTableFilters.origen = origen;
+        renderPedidosNivel2(estado);
+    };
+
     window.aplicarToolbarFiltrosPedidos = (estadoFiltrado) => {
         window.pedidosTableFilters.fechaSort = document.getElementById('filt-ped-fecha').value;
-        window.pedidosTableFilters.origen = document.getElementById('filt-ped-origen').value;
         window.pedidosTableFilters.montoSort = document.getElementById('filt-ped-monto').value;
         renderPedidosNivel2(estadoFiltrado);
     };
@@ -1117,7 +1121,36 @@ document.addEventListener('DOMContentLoaded', () => {
         
         window.pedidosTableFilters = window.pedidosTableFilters || { fechaSort: 'desc', origen: 'all', montoSort: 'none' };
 
-        let pedidosFiltrados = window.erpDB.pedidos.filter(p => p.estado === estadoFiltrado);
+        const pedidosDeEstado = window.erpDB.pedidos.filter(p => p.estado === estadoFiltrado);
+        
+        // Contadores para las tarjetas de origen
+        const counts = {
+            all: pedidosDeEstado.length,
+            'Online': pedidosDeEstado.filter(p => p.origen === 'Online').length,
+            'B2B': pedidosDeEstado.filter(p => p.origen === 'B2B').length,
+            'Tienda Fija': pedidosDeEstado.filter(p => p.origen === 'Tienda Fija').length
+        };
+
+        const origins = [
+            { id: 'all', label: 'Todos', icon: 'ph-squares-four' },
+            { id: 'Online', label: 'Online', icon: 'ph-globe' },
+            { id: 'B2B', label: 'B2B', icon: 'ph-briefcase' },
+            { id: 'Tienda Fija', label: 'Tienda Fija', icon: 'ph-storefront' }
+        ];
+
+        const cardsOrigenHtml = origins.map(o => {
+            const isActive = window.pedidosTableFilters.origen === o.id;
+            return `
+                <div class="subcat-card ${isActive ? 'active' : ''}" style="padding: 6px 14px; min-width: auto; flex-shrink: 0;" onclick="window.setPedidosOrigen('${o.id}', '${estadoFiltrado}')">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <i class="ph ${o.icon}" style="font-size:16px;"></i>
+                        <span style="font-size:12px; font-weight:700; white-space:nowrap;">${o.label} <span style="font-weight:normal; opacity:0.7;">(${counts[o.id]})</span></span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        let pedidosFiltrados = pedidosDeEstado;
 
         if (window.pedidosTableFilters.origen !== 'all') {
             pedidosFiltrados = pedidosFiltrados.filter(p => p.origen === window.pedidosTableFilters.origen);
@@ -1206,29 +1239,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="btn btn-secondary" onclick="renderView('pedidos')"><i class="ph ph-arrow-left"></i> Volver al Dashboard</button>
             </div>
             
-            <div class="table-toolbar" style="margin-bottom: 24px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <i class="ph ph-storefront" style="font-size:18px;"></i>
-                    <select id="filt-ped-origen" class="form-control" onchange="aplicarToolbarFiltrosPedidos('${estadoFiltrado}')">
-                        <option value="all">Cualquier Origen</option>
-                        <option value="Online" ${window.pedidosTableFilters.origen==='Online'?'selected':''}>Online</option>
-                        <option value="B2B" ${window.pedidosTableFilters.origen==='B2B'?'selected':''}>B2B</option>
-                        <option value="Tienda Fija" ${window.pedidosTableFilters.origen==='Tienda Fija'?'selected':''}>Tienda Fija</option>
+            <div class="table-toolbar" style="margin-bottom: 24px; padding: 12px 20px; display:flex; align-items:center; gap:16px; flex-wrap: nowrap; overflow-x: auto;">
+                <div style="display:flex; gap:8px; align-items:center; flex:1;">
+                    ${cardsOrigenHtml}
+                </div>
+
+                <div style="width:1px; height:24px; background:var(--border-color); margin: 0 8px;"></div>
+
+                <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                    <i class="ph ph-calendar" style="font-size:18px; color:var(--text-muted);"></i>
+                    <select id="filt-ped-fecha" class="form-control" style="font-size:12px; height:32px; width:150px; padding:4px 8px;" onchange="aplicarToolbarFiltrosPedidos('${estadoFiltrado}')">
+                        <option value="desc" ${window.pedidosTableFilters.fechaSort==='desc'?'selected':''}>Recientes</option>
+                        <option value="asc" ${window.pedidosTableFilters.fechaSort==='asc'?'selected':''}>Antiguos</option>
                     </select>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
-                    <i class="ph ph-calendar" style="font-size:18px;"></i>
-                    <select id="filt-ped-fecha" class="form-control" onchange="aplicarToolbarFiltrosPedidos('${estadoFiltrado}')">
-                        <option value="desc" ${window.pedidosTableFilters.fechaSort==='desc'?'selected':''}>Más Recientes</option>
-                        <option value="asc" ${window.pedidosTableFilters.fechaSort==='asc'?'selected':''}>Más Antiguos</option>
-                    </select>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <i class="ph ph-currency-dollar" style="font-size:18px;"></i>
-                    <select id="filt-ped-monto" class="form-control" onchange="aplicarToolbarFiltrosPedidos('${estadoFiltrado}')">
-                        <option value="none" ${window.pedidosTableFilters.montoSort==='none'?'selected':''}>-- Ordenar Precio --</option>
-                        <option value="desc" ${window.pedidosTableFilters.montoSort==='desc'?'selected':''}>Mayor a Menor ($)</option>
-                        <option value="asc" ${window.pedidosTableFilters.montoSort==='asc'?'selected':''}>Menor a Mayor ($)</option>
+                <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                    <i class="ph ph-currency-dollar" style="font-size:18px; color:var(--text-muted);"></i>
+                    <select id="filt-ped-monto" class="form-control" style="font-size:12px; height:32px; width:150px; padding:4px 8px;" onchange="aplicarToolbarFiltrosPedidos('${estadoFiltrado}')">
+                        <option value="none" ${window.pedidosTableFilters.montoSort==='none'?'selected':''}>Orden: Precio</option>
+                        <option value="desc" ${window.pedidosTableFilters.montoSort==='desc'?'selected':''}>Descendente ($)</option>
+                        <option value="asc" ${window.pedidosTableFilters.montoSort==='asc'?'selected':''}>Ascendente ($)</option>
                     </select>
                 </div>
             </div>
@@ -1308,7 +1338,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const config = incidenciasCatConfig[catName];
         window.incidenciaSortMode = window.incidenciaSortMode || 'fecha';
         
-        let incidencias = window.erpDB.incidencias.filter(i => i.categoria === catName);
+        // Inicializar estados de filtro si no existen
+        if(window.incidShowResolved === undefined) window.incidShowResolved = true;
+        if(window.incidDateStart === undefined) window.incidDateStart = '';
+        if(window.incidDateEnd === undefined) window.incidDateEnd = '';
+        
+        let incidencias = window.erpDB.incidencias.filter(i => {
+            const matchesCat = i.categoria === catName;
+            const matchesResolved = window.incidShowResolved || i.estado !== 'resuelta';
+            return matchesCat && matchesResolved;
+        });
         
         // Ordenación
         const prioridadesOrder = { 'Crítica': 4, 'Alta': 3, 'Media': 2, 'Baja': 1 };
@@ -1370,15 +1409,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="btn btn-primary" onclick="abrirNuevaIncidenciaCat('${catName}')"><i class="ph ph-plus"></i> Añadir Incidencia</button>
             </div>
 
-            <div class="kpi-card" style="margin-bottom:20px; padding:16px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; gap:24px;">
-                    <div style="display:flex; flex-direction:column;">
-                        <span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Filtrar / Ordenar por</span>
-                        <div style="display:flex; gap:8px; margin-top:4px;">
-                            <button class="btn ${window.incidenciaSortMode === 'fecha' ? 'btn-primary' : 'btn-secondary'}" style="padding:4px 12px; font-size:11px;" onclick="window.setIncincSort('fecha', '${catName}')">Más Recientes</button>
-                            <button class="btn ${window.incidenciaSortMode === 'prioridad' ? 'btn-primary' : 'btn-secondary'}" style="padding:4px 12px; font-size:11px;" onclick="window.setIncincSort('prioridad', '${catName}')">Por Prioridad</button>
-                        </div>
+            <div class="view-filters-compact" style="margin-bottom:16px; display:flex; gap:20px; align-items:center; background:var(--card-bg); padding:10px 20px; border-radius:12px; border:1px solid var(--border-color); font-size:13px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="color:var(--text-muted); font-weight:600; text-transform:uppercase; font-size:10px; letter-spacing:0.5px;">Orden:</span>
+                    <div style="display:flex; background:var(--bg-color); border-radius:6px; padding:2px;">
+                        <button class="btn ${window.incidenciaSortMode === 'fecha' ? 'btn-primary' : 'btn-secondary'}" style="padding:4px 10px; font-size:11px; border:none;" onclick="window.setIncincSort('fecha', '${catName}')">Fecha</button>
+                        <button class="btn ${window.incidenciaSortMode === 'prioridad' ? 'btn-primary' : 'btn-secondary'}" style="padding:4px 10px; font-size:11px; border:none;" onclick="window.setIncincSort('prioridad', '${catName}')">Prioridad</button>
                     </div>
+                </div>
+
+                <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+                    <span style="color:var(--text-muted); font-size:12px; font-weight:500;">Incidencias finalizadas:</span>
+                    <button class="btn" onclick="window.toggleShowResolved('${catName}')" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:12px; border-radius:20px; border:1px solid ${window.incidShowResolved ? 'var(--success)' : 'var(--border-color)'}; background:${window.incidShowResolved ? 'var(--success)' : 'transparent'}; color:${window.incidShowResolved ? 'white' : 'var(--text-main)'}; transition:all 0.2s;">
+                        <i class="ph ${window.incidShowResolved ? 'ph-eye' : 'ph-eye-slash'}" style="font-size:16px;"></i>
+                        ${window.incidShowResolved ? 'Mostradas' : 'Ocultas'}
+                    </button>
                 </div>
             </div>
 
@@ -1403,6 +1448,11 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     };
 
+    window.toggleShowResolved = (cat) => {
+        window.incidShowResolved = !window.incidShowResolved;
+        renderIncidenciasCategoria(cat);
+    };
+
     window.toggleDetalleIncidencia = (id) => {
         const el = document.getElementById('detalle-inc-' + id);
         if(el) {
@@ -1419,8 +1469,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const i = window.erpDB.incidencias.find(x => x.id === id);
         if(!i) return;
 
-        if(i.categoria === 'Pedidos' && i.relacionId) {
-            abrirModalRecuperacionPedido(id, i.relacionId);
+        if((i.categoria === 'Pedidos' || i.categoria === 'Proveedores') && i.relacionId) {
+            abrirModalRecuperacionPedido(id, i.relacionId, i.categoria);
         } else {
             i.estado = 'resuelta';
             window.saveERPData();
@@ -1428,24 +1478,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    window.abrirModalRecuperacionPedido = (incId, pedidoId) => {
+    window.abrirModalRecuperacionPedido = (incId, pedidoId, categoria) => {
+        const esVenta = categoria === 'Pedidos';
+        const titulo = esVenta ? 'Pedido B2B' : 'Pedido Proveedor';
+        
         const content = `
             <div style="margin-bottom:20px; text-align:center;">
                 <div style="background:#00e67615; color:#00e676; padding:15px; border-radius:12px; margin-bottom:15px;">
                     <i class="ph ph-check-circle" style="font-size:32px;"></i>
                     <p style="margin:5px 0 0 0; font-weight:bold;">Incidencia Resuelta</p>
                 </div>
-                <p style="font-size:14px; color:var(--text-muted);">Has resuelto la incidencia del pedido <b>${pedidoId}</b>. <br> ¿En qué estado debe continuar el pedido?</p>
+                <p style="font-size:14px; color:var(--text-muted);">Has resuelto la incidencia de <b>${pedidoId}</b>. <br> ¿En qué estado debe continuar el pedido?</p>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-                <button class="btn btn-secondary" style="border:1px solid #ffb300; color:#ffb300;" onclick="finalizarResolucionConEstado('${incId}', '${pedidoId}', 'pendiente')">A Pendiente</button>
-                <button class="btn btn-secondary" style="border:1px solid #4d7cff; color:#4d7cff;" onclick="finalizarResolucionConEstado('${incId}', '${pedidoId}', 'en_proceso')">A En Proceso</button>
-                <div style="grid-column: span 2;">
-                    <button class="btn btn-primary" style="width:100%; background:#00e676; border:none;" onclick="finalizarResolucionConEstado('${incId}', '${pedidoId}', 'completado')">Marcar como Completado</button>
-                </div>
+                ${esVenta ? `
+                    <button class="btn btn-secondary" style="border:1px solid #ffb300; color:#ffb300;" onclick="finalizarResolucionConEstado('${incId}', '${pedidoId}', 'pendiente')">A Pendiente</button>
+                    <button class="btn btn-secondary" style="border:1px solid #4d7cff; color:#4d7cff;" onclick="finalizarResolucionConEstado('${incId}', '${pedidoId}', 'en_proceso')">A En Proceso</button>
+                    <div style="grid-column: span 2;">
+                        <button class="btn btn-primary" style="width:100%; background:#00e676; border:none;" onclick="finalizarResolucionConEstado('${incId}', '${pedidoId}', 'completado')">Marcar como Completado</button>
+                    </div>
+                ` : `
+                    <button class="btn btn-secondary" style="border:1px solid #ffb300; color:#ffb300;" onclick="finalizarResolucionConEstadoProv('${incId}', '${pedidoId}', 'solicitado')">A Solicitado</button>
+                    <button class="btn btn-secondary" style="border:1px solid #4d7cff; color:#4d7cff;" onclick="finalizarResolucionConEstadoProv('${incId}', '${pedidoId}', 'en_camino')">A En Camino</button>
+                    <div style="grid-column: span 2;">
+                        <button class="btn btn-primary" style="width:100%; background:#00e676; border:none;" onclick="finalizarResolucionConEstadoProv('${incId}', '${pedidoId}', 'completado')">Recibido (Aumentar Stock)</button>
+                    </div>
+                `}
             </div>
         `;
-        abrirModal('Resolución de Pedido', content);
+        abrirModal(`Resolución de ${titulo}`, content);
+    };
+
+    window.finalizarResolucionConEstadoProv = (incId, pedidoId, nuevoEstado) => {
+        const p = window.erpDB.pedidosProveedor.find(x => x.id === pedidoId);
+        const i = window.erpDB.incidencias.find(x => x.id === incId);
+        
+        if (p && i) {
+            i.estado = 'resuelta';
+            window.cambiarEstadoPedidoProv(pedidoId, nuevoEstado, window.currentProcView || 'historial');
+            cerrarModal();
+        }
     };
 
     window.finalizarResolucionConEstado = (incId, pedidoId, nuevoEstado) => {
@@ -1461,15 +1533,21 @@ document.addEventListener('DOMContentLoaded', () => {
         renderIncidenciasCategoria('Pedidos');
     };
 
-    window.abrirNuevaIncidenciaCat = (catName) => {
+    window.abrirNuevaIncidenciaCat = (catName, relId = null) => {
         let pedidoSelectHtml = '';
-        if(catName === 'Pedidos') {
-            const pedidosOpts = window.erpDB.pedidos.slice(0, 50).map(p => `<option value="${p.id}">${p.id} - ${p.cliente}</option>`).join('');
+        if(catName === 'Pedidos' || catName === 'Proveedores') {
+            const isProv = catName === 'Proveedores';
+            const dataSource = isProv ? window.erpDB.pedidosProveedor : window.erpDB.pedidos;
+            const pedidosOpts = dataSource.slice(0, 50).map(p => {
+                const label = isProv ? `${p.id} - Inversión $${p.monto.toLocaleString()}` : `${p.id} - ${p.cliente}`;
+                return `<option value="${p.id}" ${p.id === relId ? 'selected' : ''}>${label}</option>`;
+            }).join('');
+
             pedidoSelectHtml = `
                 <div class="form-group">
-                    <label>Vincular a Pedido (Opcional)</label>
+                    <label>Vincular a Pedido ${isProv ? 'Proveedor' : 'B2B'} (Opcional)</label>
                     <select id="new-inc-rel" class="form-control">
-                        <option value="">-- Sin pedido específico --</option>
+                        <option value="">-- Sin vínculo específico --</option>
                         ${pedidosOpts}
                     </select>
                 </div>
@@ -1532,26 +1610,536 @@ document.addEventListener('DOMContentLoaded', () => {
         renderIncidenciasCategoria(catName);
     };
 
+    // --- Módulo de Proveedores y Aprovisionamiento ---
     function renderProveedores() {
+        actualizarKPIs();
+        
+        const pedidosActivos = window.erpDB.pedidosProveedor.filter(p => ['solicitado', 'en_camino'].includes(p.estado)).length;
+        const totalProvs = window.erpDB.proveedores.length;
+
         viewContainer.innerHTML = `
             <div class="view-header">
                 <div>
-                    <h1 class="view-title">Proveedores y Reposición</h1>
-                    <p class="view-subtitle">Gestión de remesas en tránsito</p>
+                    <h1 class="view-title">Proveedores y Aprovisionamiento</h1>
+                    <p class="view-subtitle">Gestión de compras B2B y reposición de stock</p>
                 </div>
             </div>
+
             <div class="card-grid">
-                <div class="kpi-card" style="align-items:center; justify-content:center; text-align:center; min-height:200px">
-                    <i class="ph ph-truck text-warning" style="font-size: 48px; margin-bottom: 16px;"></i>
-                    <h3>Proveedor A en Tránsito</h3>
-                    <p class="view-subtitle" style="margin-top:8px;">Llegada: Hoy 16:00</p>
-                    <div class="progress-container" style="width: 80%; margin: 16px auto;"><div class="progress-bar" style="width: 75%; background-color: var(--warning);"></div></div>
-                    <span style="font-size:12px; color:var(--text-muted);">Progreso del envío (75%)</span>
-                    <button class="btn btn-primary" style="margin-top:16px;">Validar Entrada</button>
+                <!-- Tarjeta: Gestión de Socios -->
+                <div class="kpi-card" style="cursor:pointer; border-left: 4px solid var(--primary);" onclick="window.renderListadoProveedores()">
+                    <div class="kpi-header">
+                        <span style="font-weight:bold; color:var(--text-muted);">Socios Comerciales</span>
+                        <i class="ph ph-users" style="color:var(--primary); background:rgba(99, 102, 241, 0.1); padding:8px; border-radius:8px; font-size:24px;"></i>
+                    </div>
+                    <div class="kpi-value">${totalProvs}</div>
+                    <p class="view-subtitle" style="margin-top:8px;">Proveedores registrados en el sistema.</p>
+                    <button class="btn btn-secondary" style="margin-top:20px; width:100%;">Gestionar Cartera</button>
+                </div>
+
+                <!-- Tarjeta: Pedidos en Curso -->
+                <div class="kpi-card" style="cursor:pointer; border-left: 4px solid var(--warning);" onclick="window.renderPedidosProveedor('activos')">
+                    <div class="kpi-header">
+                        <span style="font-weight:bold; color:var(--text-muted);">Pedidos en Curso</span>
+                        <i class="ph ph-truck" style="color:var(--warning); background:rgba(255, 179, 0, 0.1); padding:8px; border-radius:8px; font-size:24px;"></i>
+                    </div>
+                    <div class="kpi-value">${pedidosActivos}</div>
+                    <p class="view-subtitle" style="margin-top:8px;">Remesas solicitadas o en tránsito.</p>
+                    <button class="btn btn-secondary" style="margin-top:20px; width:100%;">Monitor de Seguimiento</button>
+                </div>
+
+                <!-- Tarjeta: Historial -->
+                <div class="kpi-card" style="cursor:pointer; border-left: 4px solid var(--success);" onclick="window.renderPedidosProveedor('historial')">
+                    <div class="kpi-header">
+                        <span style="font-weight:bold; color:var(--text-muted);">Historial de Compras</span>
+                        <i class="ph ph-history" style="color:var(--success); background:rgba(0, 230, 118, 0.1); padding:8px; border-radius:8px; font-size:24px;"></i>
+                    </div>
+                    <div class="kpi-value">${window.erpDB.pedidosProveedor.length - pedidosActivos}</div>
+                    <p class="view-subtitle" style="margin-top:8px;">Registro histórico de recepciones.</p>
+                    <button class="btn btn-secondary" style="margin-top:20px; width:100%;">Consultar Archivo</button>
                 </div>
             </div>
         `;
     }
+
+    window.renderListadoProveedores = () => {
+        const provsHtml = window.erpDB.proveedores.map(p => `
+            <div class="kpi-card" style="cursor:pointer; transition:transform 0.2s; border-top: 1px solid var(--border-color);" onclick="window.renderCatalogoProveedor('${p.id}')">
+                <div style="font-size:40px; margin-bottom:12px;">${p.logo || '🏢'}</div>
+                <h3 style="margin:0; font-size:18px;">${p.nombre}</h3>
+                <p style="font-size:12px; color:var(--text-muted); margin:8px 0;">${p.categorias.join(', ')}</p>
+                <div style="margin-top:16px; font-size:11px; color:var(--text-muted);">
+                    <div><i class="ph ph-user"></i> ${p.contacto}</div>
+                    <div><i class="ph ph-envelope"></i> ${p.email}</div>
+                </div>
+                <button class="btn btn-primary" style="margin-top:20px; width:100%;">Ver Catálogo</button>
+            </div>
+        `).join('');
+
+        viewContainer.innerHTML = `
+            <div class="view-header">
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <button class="btn btn-secondary" onclick="renderView('proveedores')" style="padding:8px;"><i class="ph ph-arrow-left" style="font-size:20px;"></i></button>
+                    <div>
+                        <h1 class="view-title">Socios Comerciales</h1>
+                        <p class="view-subtitle">Fábricas y distribuidores oficiales</p>
+                    </div>
+                </div>
+            </div>
+            <div class="card-grid">
+                ${provsHtml}
+            </div>
+        `;
+    };
+
+    window.renderCatalogoProveedor = (provId) => {
+        // Gestión de estado de selección, filtros y ordenación
+        window.provSelection = window.provSelection || new Set();
+        window.activeProvStockSort = window.activeProvStockSort || 'none'; // 'none', 'asc', 'desc'
+        window.activeProvCatFilter = window.activeProvCatFilter || 'all';
+
+        const prov = window.erpDB.proveedores.find(p => p.id === provId);
+        // Filtrar productos que coincidan con las categorías del proveedor
+        let catalog = window.erpDB.productos.filter(pr => prov.categorias.includes(pr.categoria));
+        
+        const subcats = [...new Set(catalog.map(p => p.subcategoria))];
+
+        let filteredCatalog = window.activeProvCatFilter === 'all' 
+            ? catalog 
+            : catalog.filter(p => p.subcategoria === window.activeProvCatFilter);
+
+        // Aplicar Ordenación de Stock
+        if (window.activeProvStockSort !== 'none') {
+            filteredCatalog.sort((a, b) => {
+                if (window.activeProvStockSort === 'asc') return a.stock - b.stock;
+                return b.stock - a.stock;
+            });
+        }
+
+        const chipsHtml = `
+            <div class="subcat-card ${window.activeProvCatFilter === 'all' ? 'active' : ''}" onclick="window.setProvSubcatFilter('all', '${provId}')">
+                <span style="font-size:13px; font-weight:700;">Todos los Productos</span>
+            </div>
+        ` + subcats.map(s => `
+            <div class="subcat-card ${window.activeProvCatFilter === s ? 'active' : ''}" onclick="window.setProvSubcatFilter('${s}', '${provId}')">
+                <span style="font-size:13px; font-weight:700;">${s}</span>
+            </div>
+        `).join('');
+
+        const productosHtml = filteredCatalog.map(p => {
+            const isSelected = window.provSelection.has(p.id);
+            
+            // Lógica de colores de stock
+            let stockColor = '#00e676'; // Verde
+            let stockBg = 'rgba(0, 230, 118, 0.1)';
+            if (p.stock <= 0) {
+                stockColor = '#ff3d71'; // Rojo
+                stockBg = 'rgba(255, 61, 113, 0.1)';
+            } else if (p.stock <= 5) {
+                stockColor = '#ffb300'; // Naranja
+                stockBg = 'rgba(255, 179, 0, 0.1)';
+            }
+
+            return `
+                <tr style="transition: background 0.2s; ${isSelected ? 'background: rgba(99, 102, 241, 0.05);' : ''}" onmouseover="this.style.background='rgba(99, 102, 241, 0.05)'" onmouseout="this.style.background='${isSelected ? 'rgba(99, 102, 241, 0.05)' : 'transparent'}'">
+                    <td style="text-align:center;">
+                        <input type="checkbox" style="width:18px; height:18px; cursor:pointer;" ${isSelected ? 'checked' : ''} onchange="window.toggleProvProductSelection('${p.id}', '${provId}')">
+                    </td>
+                    <td style="font-weight:600;">${p.id}</td>
+                    <td style="font-weight:bold;">${p.nombre}</td>
+                    <td>${p.subcategoria}</td>
+                    <td>
+                        <span style="background:${stockBg}; color:${stockColor}; padding:4px 10px; border-radius:12px; font-weight:bold; font-size:13px; border: 1px solid ${stockColor}40;">
+                            ${p.stock} uds
+                        </span>
+                    </td>
+                    <td style="font-weight:bold;">$${Math.round(p.precio * 0.7).toLocaleString()}</td>
+                </tr>
+            `;
+        }).join('');
+
+        viewContainer.innerHTML = `
+            <div class="view-header">
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <button class="btn btn-secondary" onclick="renderView('proveedores')" style="padding:8px;"><i class="ph ph-arrow-left" style="font-size:20px;"></i></button>
+                    <div>
+                        <h1 class="view-title">Catálogo: ${prov.nombre}</h1>
+                        <p class="view-subtitle">Selecciona los productos para reposición masiva</p>
+                    </div>
+                </div>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:10px; background:var(--card-bg); padding:6px 14px; border-radius:10px; border:1px solid var(--border-color); box-shadow:var(--shadow-sm); transition:all 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border-color)'">
+                        <i class="ph ph-sort-ascending" style="color:var(--primary); font-size:18px;"></i>
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:10px; color:var(--text-muted); font-weight:bold; text-transform:uppercase; line-height:1;">Ordenación</span>
+                            <select class="form-control" style="font-size:13px; height:20px; border:none; background:transparent; padding:0; width:150px; font-weight:600; cursor:pointer; color:var(--text-main); display:block;" onchange="window.setProvStockSort(this.value, '${provId}')">
+                                <option value="none" style="background:var(--card-bg); color:var(--text-main);" ${window.activeProvStockSort === 'none' ? 'selected' : ''}>Sin Ordenar Stock</option>
+                                <option value="asc" style="background:var(--card-bg); color:var(--text-main);" ${window.activeProvStockSort === 'asc' ? 'selected' : ''}>Stock: Menor a Mayor</option>
+                                <option value="desc" style="background:var(--card-bg); color:var(--text-main);" ${window.activeProvStockSort === 'desc' ? 'selected' : ''}>Stock: Mayor a Menor</option>
+                            </select>
+                        </div>
+                    </div>
+                    ${window.provSelection.size > 0 ? `
+                        <button class="btn btn-primary" onclick="window.abrirSolicitudBatch('${provId}')" style="background: linear-gradient(135deg, #00e676, #00c853); border:none; box-shadow: 0 4px 15px rgba(0, 230, 118, 0.3);">
+                            <i class="ph ph-shopping-cart"></i> Solicitar (${window.provSelection.size})
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+
+            <div style="display:flex; gap:12px; margin-bottom:24px; overflow-x:auto; padding-bottom:8px;">
+                ${chipsHtml}
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;"></th>
+                            <th>Ref</th>
+                            <th>Nombre Producto</th>
+                            <th>Subcategoría</th>
+                            <th>Stock Actual</th>
+                            <th>Precio Coste</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${productosHtml.length > 0 ? productosHtml : '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted);">No hay productos que coincidan con los filtros</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    };
+
+    window.toggleProvProductSelection = (id, provId) => {
+        if (window.provSelection.has(id)) window.provSelection.delete(id);
+        else window.provSelection.add(id);
+        renderCatalogoProveedor(provId);
+    };
+
+    window.setProvStockSort = (val, provId) => {
+        window.activeProvStockSort = val;
+        renderCatalogoProveedor(provId);
+    };
+
+    window.abrirSolicitudBatch = (provId) => {
+        const prov = window.erpDB.proveedores.find(p => p.id === provId);
+        const selectedPrds = window.erpDB.productos.filter(p => window.provSelection.has(p.id));
+        
+        const lineasHtml = selectedPrds.map(p => {
+            const costo = Math.round(p.precio * 0.7);
+            return `
+                <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:16px; align-items:center; padding:12px; border-bottom:1px solid var(--border-color);">
+                    <div>
+                        <div style="font-weight:bold; font-size:13px;">${p.nombre}</div>
+                        <div style="font-size:11px; color:var(--text-muted);">Stock: ${p.stock} | Coste: $${costo.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <input type="number" class="form-control batch-qty" data-id="${p.id}" data-costo="${costo}" value="10" min="1" style="height:32px; font-size:13px;" onchange="window.updateBatchTotal()">
+                    </div>
+                    <div style="text-align:right; font-weight:bold; color:var(--primary);" class="batch-subtotal" id="subtotal-${p.id}">
+                        $${(costo * 10).toLocaleString()}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const totalInicial = selectedPrds.reduce((acc, p) => acc + (Math.round(p.precio * 0.7) * 10), 0);
+
+        const content = `
+            <div style="max-height:60vh; overflow-y:auto; margin-bottom:20px; border:1px solid var(--border-color); border-radius:8px; background:rgba(0,0,0,0.01);">
+                ${lineasHtml}
+            </div>
+            <div style="background:var(--card-bg); padding:16px; border-radius:12px; border:2px solid var(--primary); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="display:block; font-size:12px; color:var(--text-muted); font-weight:bold; text-transform:uppercase;">Inversión Total Estimada</span>
+                    <span id="batch-grand-total" style="font-size:24px; font-weight:900; color:var(--primary);">$${totalInicial.toLocaleString()}</span>
+                </div>
+                <button class="btn btn-primary" style="padding:12px 24px;" onclick="window.finalizarCompraBatch('${provId}')">Finalizar y Firmar Pedido</button>
+            </div>
+        `;
+        abrirModal(`Solicitud Masiva: ${prov.nombre}`, content);
+    };
+
+    window.updateBatchTotal = () => {
+        let grandTotal = 0;
+        document.querySelectorAll('.batch-qty').forEach(input => {
+            const qty = parseInt(input.value) || 0;
+            const costo = parseInt(input.dataset.costo);
+            const subtotal = qty * costo;
+            document.getElementById(`subtotal-${input.dataset.id}`).innerText = '$' + subtotal.toLocaleString();
+            grandTotal += subtotal;
+        });
+        document.getElementById('batch-grand-total').innerText = '$' + grandTotal.toLocaleString();
+    };
+
+    window.finalizarCompraBatch = (provId) => {
+        const lineas = [];
+        let totalMonto = 0;
+
+        document.querySelectorAll('.batch-qty').forEach(input => {
+            const prdId = input.dataset.id;
+            const qty = parseInt(input.value);
+            const costo = parseInt(input.dataset.costo);
+            if (qty > 0) {
+                const prd = window.erpDB.productos.find(p => p.id === prdId);
+                lineas.push({ nombre: prd.nombre, cantidad: qty, precioUnitario: costo });
+                totalMonto += (qty * costo);
+            }
+        });
+
+        if (lineas.length === 0) return alert('No hay productos válidos para solicitar.');
+
+        const nuevoPedido = {
+            id: 'ORD-' + (window.erpDB.pedidosProveedor.length + 700),
+            proveedorId: provId,
+            fecha: new Date().toLocaleDateString('sv-SE'),
+            monto: totalMonto,
+            estado: 'solicitado',
+            lineas: lineas
+        };
+
+        window.erpDB.pedidosProveedor.unshift(nuevoPedido);
+        window.saveERPData();
+        window.provSelection.clear(); // Limpiar selección tras éxito
+        cerrarModal();
+        alert('Orden de compra masiva enviada con éxito.');
+        renderProveedores();
+    };
+
+    window.setProvSubcatFilter = (val, provId) => {
+        window.activeProvCatFilter = val;
+        renderCatalogoProveedor(provId);
+    };
+
+    window.abrirCompraDirecta = (provId, prdId) => {
+        const prd = window.erpDB.productos.find(p => p.id === prdId);
+        const costo = Math.round(prd.precio * 0.7);
+        const content = `
+            <div style="text-align:center; margin-bottom:20px;">
+                <i class="ph ph-shopping-cart" style="font-size:48px; color:var(--primary);"></i>
+                <h3 style="margin-top:12px;">Nueva Orden de Compra</h3>
+                <p style="color:var(--text-muted); font-size:14px;">Solicitando reposición de <b>${prd.nombre}</b></p>
+            </div>
+            <div class="form-group">
+                <label>Cantidad a Solicitar</label>
+                <input type="number" id="buy-qty" class="form-control" value="10" min="1" onchange="window.updateBuyCalc(${costo})">
+            </div>
+            <div style="background:var(--bg-color); padding:16px; border-radius:8px; border:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:bold; color:var(--text-muted);">Total Estimado:</span>
+                <span id="buy-total" style="font-size:20px; font-weight:800; color:var(--primary);">$${(costo * 10).toLocaleString()}</span>
+            </div>
+            <button class="btn btn-primary" style="width:100%; margin-top:20px;" onclick="window.finalizarCompraProv('${provId}', '${prdId}')">Firmar Pedido de Compra</button>
+        `;
+        abrirModal('Reposición Directa', content);
+    };
+
+    window.updateBuyCalc = (costo) => {
+        const qty = parseInt(document.getElementById('buy-qty').value) || 0;
+        document.getElementById('buy-total').innerText = '$' + (qty * costo).toLocaleString();
+    };
+
+    window.finalizarCompraProv = (provId, prdId) => {
+        const prd = window.erpDB.productos.find(p => p.id === prdId);
+        const qty = parseInt(document.getElementById('buy-qty').value);
+        if(!qty || qty < 1) return alert('Indique una cantidad válida.');
+
+        const costo = Math.round(prd.precio * 0.7);
+        const nuevoPedido = {
+            id: 'ORD-' + (window.erpDB.pedidosProveedor.length + 600),
+            proveedorId: provId,
+            fecha: new Date().toLocaleDateString('sv-SE'),
+            monto: costo * qty,
+            estado: 'solicitado',
+            lineas: [{ nombre: prd.nombre, cantidad: qty, precioUnitario: costo }]
+        };
+
+        window.erpDB.pedidosProveedor.unshift(nuevoPedido);
+        window.saveERPData();
+        cerrarModal();
+        alert('Orden de compra enviada al proveedor.');
+        renderProveedores();
+    };
+
+    window.renderPedidosProveedor = (filtroTipo) => {
+        const provMap = {};
+        window.erpDB.proveedores.forEach(p => provMap[p.id] = p.nombre);
+
+        // Inicializar filtros si no existen
+        window.procFilters = window.procFilters || { supplier: 'all', date: 'desc', status: 'all' };
+
+        let pedidos = window.erpDB.pedidosProveedor;
+        
+        // Filtro Base (Activos vs Historial)
+        window.currentProcView = filtroTipo;
+        if(filtroTipo === 'activos') {
+            pedidos = pedidos.filter(p => ['solicitado', 'en_camino'].includes(p.estado));
+        } else {
+            pedidos = pedidos.filter(p => ['completado', 'cancelado', 'incidencia'].includes(p.estado));
+        }
+
+        // Aplicar Filtros Dinámicos
+        if (window.procFilters.supplier !== 'all') {
+            pedidos = pedidos.filter(p => p.proveedorId === window.procFilters.supplier);
+        }
+        if (window.procFilters.status !== 'all') {
+            pedidos = pedidos.filter(p => p.estado === window.procFilters.status);
+        }
+
+        // Aplicar Ordenación por Fecha
+        pedidos.sort((a, b) => {
+            if (window.procFilters.date === 'asc') return new Date(a.fecha) - new Date(b.fecha);
+            return new Date(b.fecha) - new Date(a.fecha);
+        });
+
+        const filas = pedidos.map(p => {
+            let statusColor;
+            switch(p.estado) {
+                case 'solicitado': statusColor = 'var(--text-muted)'; break;
+                case 'en_camino': statusColor = 'var(--warning)'; break;
+                case 'completado': statusColor = 'var(--success)'; break;
+                case 'cancelado': statusColor = 'var(--danger)'; break;
+                case 'incidencia': statusColor = '#ff3d71'; break;
+                default: statusColor = 'var(--text-muted)';
+            }
+
+            return `
+                <tr style="cursor:pointer;" onclick="window.toggleDetallePedidoProv('${p.id}')">
+                    <td style="font-weight:600;"><i class="ph ph-caret-down"></i> ${p.id}</td>
+                    <td>${p.fecha}</td>
+                    <td style="font-weight:bold;">${provMap[p.proveedorId] || 'Proveedor Desconocido'}</td>
+                    <td style="font-weight:bold;">$${p.monto.toLocaleString()}</td>
+                    <td><span class="status" style="background:${statusColor}20; color:${statusColor}; border:1px solid ${statusColor}40;">${p.estado.toUpperCase()}</span></td>
+                    <td onclick="event.stopPropagation()">
+                        ${(filtroTipo === 'activos' || p.estado === 'incidencia') ? `
+                            <select class="form-control" style="font-size:11px; padding:4px;" onchange="window.cambiarEstadoPedidoProv('${p.id}', this.value, '${filtroTipo}')">
+                                <option value="solicitado" ${p.estado === 'solicitado' ? 'selected' : ''}>Solicitado</option>
+                                <option value="en_camino" ${p.estado === 'en_camino' ? 'selected' : ''}>En Camino</option>
+                                <option value="completado" ${p.estado === 'completado' ? 'selected' : ''}>Recibido (Stock)</option>
+                                <option value="incidencia" ${p.estado === 'incidencia' ? 'selected' : ''}>Reportar Incidencia</option>
+                                <option value="cancelado" ${p.estado === 'cancelado' ? 'selected' : ''}>Cancelar Pedido</option>
+                            </select>
+                        ` : '<i class="ph ph-lock" style="color:var(--text-muted);"></i> Archivo'}
+                    </td>
+                </tr>
+                <tr id="detalle-prov-${p.id}" style="display:none; background:rgba(0,0,0,0.01);">
+                    <td colspan="6" style="padding:16px 24px;">
+                        <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:16px; border-radius:8px;">
+                            <h4 style="font-size:12px; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Desglose de Mercadería (Entrada)</h4>
+                            ${p.lineas.map(l => `
+                                <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:8px;">
+                                    <span><b>${l.cantidad}x</b> ${l.nombre}</span>
+                                    <span>$${(l.cantidad * l.precioUnitario).toLocaleString()}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        viewContainer.innerHTML = `
+            <div class="view-header">
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <button class="btn btn-secondary" onclick="renderView('proveedores')" style="padding:8px;"><i class="ph ph-arrow-left" style="font-size:20px;"></i></button>
+                    <div>
+                        <h1 class="view-title">${filtroTipo === 'activos' ? 'Pedidos en Curso' : 'Historial de Compras'}</h1>
+                        <p class="view-subtitle">Seguimiento de aprovisionamiento B2B</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-toolbar" style="margin-bottom: 24px; padding:12px 20px; display:flex; gap:16px; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <i class="ph ph-storefront" style="color:var(--text-muted);"></i>
+                    <select id="proc-filt-prov" class="form-control" style="width:180px; font-size:12px;" onchange="window.setProcFilter('supplier', this.value, '${filtroTipo}')">
+                        <option value="all">Todos los Proveedores</option>
+                        ${window.erpDB.proveedores.map(prov => `<option value="${prov.id}" ${window.procFilters.supplier === prov.id ? 'selected' : ''}>${prov.nombre}</option>`).join('')}
+                    </select>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <i class="ph ph-calendar" style="color:var(--text-muted);"></i>
+                    <select id="proc-filt-date" class="form-control" style="width:140px; font-size:12px;" onchange="window.setProcFilter('date', this.value, '${filtroTipo}')">
+                        <option value="desc" ${window.procFilters.date === 'desc' ? 'selected' : ''}>Más Recientes</option>
+                        <option value="asc" ${window.procFilters.date === 'asc' ? 'selected' : ''}>Más Antiguos</option>
+                    </select>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <i class="ph ph-funnel" style="color:var(--text-muted);"></i>
+                    <select id="proc-filt-status" class="form-control" style="width:140px; font-size:12px;" onchange="window.setProcFilter('status', this.value, '${filtroTipo}')">
+                        <option value="all">Cualquier Estado</option>
+                        ${filtroTipo === 'activos' ? `
+                            <option value="solicitado" ${window.procFilters.status === 'solicitado' ? 'selected' : ''}>Solicitados</option>
+                            <option value="en_camino" ${window.procFilters.status === 'en_camino' ? 'selected' : ''}>En Camino</option>
+                        ` : `
+                            <option value="completado" ${window.procFilters.status === 'completado' ? 'selected' : ''}>Completados</option>
+                            <option value="cancelado" ${window.procFilters.status === 'cancelado' ? 'selected' : ''}>Cancelados</option>
+                            <option value="incidencia" ${window.procFilters.status === 'incidencia' ? 'selected' : ''}>Incidencias</option>
+                        `}
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Orden ID</th>
+                            <th>Fecha</th>
+                            <th>Proveedor</th>
+                            <th>Inversión</th>
+                            <th>Estado</th>
+                            <th>Gestión</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filas.length > 0 ? filas : '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:40px;">No se encontraron registros</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    };
+
+    window.toggleDetallePedidoProv = (id) => {
+        const el = document.getElementById('detalle-prov-' + id);
+        if(el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+    };
+
+    window.cambiarEstadoPedidoProv = (id, nuevoEstado, catRef) => {
+        const p = window.erpDB.pedidosProveedor.find(x => x.id === id);
+        if(!p) return;
+
+        // Si el estado pasa a completado, aumentamos stock
+        if(nuevoEstado === 'completado' && p.estado !== 'completado') {
+            p.lineas.forEach(linea => {
+                const prd = window.erpDB.productos.find(prod => prod.nombre === linea.nombre);
+                if(prd) {
+                    prd.stock += linea.cantidad;
+                }
+            });
+            alert('Mercadería recibida. El stock ha sido incrementado automáticamente.');
+        }
+
+        // Si pasa a incidencia, abrir modal de reporte
+        if(nuevoEstado === 'incidencia') {
+            p.estado = 'incidencia';
+            window.saveERPData();
+            window.abrirNuevaIncidenciaCat('Proveedores', id);
+        } else {
+            p.estado = nuevoEstado;
+            window.saveERPData();
+        }
+
+        actualizarKPIs();
+        renderPedidosProveedor(catRef);
+    };
+
+    window.setProcFilter = (field, val, tipo) => {
+        window.procFilters[field] = val;
+        renderPedidosProveedor(tipo);
+    };
 
     // --- Render Finanzas (Solo Gerente) ---
     function renderFinanzas() {
