@@ -5,12 +5,13 @@ Prototipo funcional de sistema ERP para una tienda de electrónica con gestión 
 ## Características
 
 - **Dashboard analítico** con KPIs en tiempo real y gráficos interactivos
-- **Gestión de Inventario** por categorías y subcategorías con filtros y ordenación
+- **Gestión de Inventario** por categorías y subcategorías con filtros, ordenación y paginación
 - **Sistema de Pedidos** multicanal (Online, Tienda Fija, B2B) con seguimiento de estados
 - **Simulador B2C** - Interfaz móvil para comprar como cliente final
 - **Gestión de Incidencias** con prioridades y categorías
-- **Panel de Proveedores** y gestión de tareas
-- **Finanzas** (solo accesible para Gerente)
+- **Panel de Proveedores** con CRUD completo, registro de entregas y seguimiento de pedidos
+- **Gestión de Tareas** con estados, prioridades, asignación y filtros
+- **Finanzas** (solo accesible para Gerente) con gráficos y registro de facturas
 - **Control de Roles**: Gerente, Responsable de Almacén, Empleado de Tienda
 - **Modo Claro/Oscuro** integrado
 
@@ -41,6 +42,14 @@ Prototipo funcional de sistema ERP para una tienda de electrónica con gestión 
 │   └── data.js     # Datos iniciales y gestión de BD
 └── contexto/        # Documentación del proyecto (no incluido en repo)
 ```
+
+## Roles de Usuario
+
+| Rol | Permisos |
+|-----|----------|
+| **Gerente** | Acceso completo a todas las vistas, incluyendo Finanzas |
+| **Responsable Almacén** | Inventario, Pedidos, Incidencias, Proveedores, Tareas |
+| **Empleado Tienda** | Solo lectura en Dashboard e Inventario |
 
 ## Licencia
 
