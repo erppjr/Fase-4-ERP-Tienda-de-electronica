@@ -95,11 +95,15 @@ const defaultDB = {
         { id: 'PED-1042', fecha: '2026-04-16', cliente: 'Grupo Inversor', monto: 12000, estado: 'incidencia', origen: 'B2B' }
     ],
     incidencias: [
-        { id: 'INC-001', fecha: '2026-04-10', categoria: 'Inventario', prioridad: 'Alta', titulo: 'Falta de Stock Crítico', descripcion: 'El monitor PRD-004 figura como disponible en web pero el stock físico es 0.', estado: 'abierta' },
-        { id: 'INC-002', fecha: '2026-04-09', categoria: 'Proveedores', prioridad: 'Media', titulo: 'Producto Dañado', descripcion: 'Caja abollada al descargar portátiles del camión de Proyectores Global.', estado: 'resuelta' },
-        { id: 'INC-003', fecha: '2026-04-11', categoria: 'Pedidos', prioridad: 'Crítica', titulo: 'Error en Envío B2B', descripcion: 'El pedido PED-1027 contiene teclados en lugar de monitores según reporte del cliente.', estado: 'abierta' },
-        { id: 'INC-004', fecha: '2026-04-12', categoria: 'Local', prioridad: 'Baja', titulo: 'Climatización Sala 2', descripcion: 'El aire acondicionado de la sala de servidores hace un ruido inusual.', estado: 'abierta' },
-        { id: 'INC-005', fecha: '2026-04-12', categoria: 'App', prioridad: 'Alta', titulo: 'Lentitud en Checkout', descripcion: 'Varios usuarios reportan que el simulador B2C tarda en procesar el pago.', estado: 'abierta' }
+        { id: 'INC-001', fecha: '2026-04-10', categoria: 'Inventario', prioridad: 'Alta', titulo: 'Falta de Stock Crítico', descripcion: 'El monitor PRD-004 figura como disponible en web pero el stock físico es 0.', estado: 'abierta', coste: 0 },
+        { id: 'INC-002', fecha: '2026-04-09', categoria: 'Proveedores', prioridad: 'Media', titulo: 'Producto Dañado', descripcion: 'Caja abollada al descargar portátiles del camión de Proyectores Global.', estado: 'resuelta', coste: 450 },
+        { id: 'INC-003', fecha: '2026-04-11', categoria: 'Pedidos', prioridad: 'Crítica', titulo: 'Error en Envío B2B', descripcion: 'El pedido PED-1027 contiene teclados en lugar de monitores según reporte del cliente.', estado: 'abierta', coste: 1200 },
+        { id: 'INC-004', fecha: '2026-04-12', categoria: 'Local', prioridad: 'Baja', titulo: 'Climatización Sala 2', descripcion: 'El aire acondicionado de la sala de servidores hace un ruido inusual.', estado: 'abierta', coste: 300 },
+        { id: 'INC-005', fecha: '2026-04-12', categoria: 'App', prioridad: 'Alta', titulo: 'Lentitud en Checkout', descripcion: 'Varios usuarios reportan que el simulador B2C tarda en procesar el pago.', estado: 'abierta', coste: 0 }
+    ],
+    devoluciones: [
+        { id: 'DEV-001', fecha: '2026-04-05', pedidoId: 'PED-1010', cliente: 'Roberto García', monto: 120, motivo: 'Producto defectuoso', estado: 'aceptada' },
+        { id: 'DEV-002', fecha: '2026-04-08', pedidoId: 'PED-1015', cliente: 'Lucía Sanz', monto: 349, motivo: 'No es lo que esperaba', estado: 'procesando' }
     ],
     proveedores: [
         { id: 'PROV-1', nombre: 'Global Hardware S.A.', contacto: 'Andrés Valencia', email: 'vientos@globalhw.com', categorias: ['Componentes', 'Ordenadores'], logo: '🏢' },
@@ -116,10 +120,99 @@ const defaultDB = {
         { id: 'ALT-1', mensaje: 'Stock crítico: Monitor Gaming 27" 144Hz (PRD-004)', tipo: 'danger' },
         { id: 'ALT-2', mensaje: 'Incidencia abierta en pedido PED-1024', tipo: 'warning' },
         { id: 'ALT-3', mensaje: 'Llegada programada Proveedor Hardware - Hoy 16:00', tipo: 'info' }
+    ],
+    empleados: [
+        { 
+            id: 'EMP-001', 
+            nombre: 'Carlos Ruiz', 
+            rol: 'Gerente General', 
+            departamento: 'Gerencia', 
+            estadoFichaje: 'fuera', 
+            ultimaEntrada: null, 
+            avatar: '👨‍💼',
+            tareas: [
+                { id: 'T-101', titulo: 'Revisión trimestral', descripcion: 'Analizar los resultados del primer trimestre.', estado: 'pendiente', prioridad: 'Alta' },
+                { id: 'T-102', titulo: 'Plan de expansión', descripcion: 'Estudiar apertura de nueva sucursal en zona norte.', estado: 'en_progreso', prioridad: 'Media' },
+                { id: 'T-103', titulo: 'Firma contratos', descripcion: 'Revisar contratos de nuevos proveedores.', estado: 'completada', prioridad: 'Baja' }
+            ]
+        },
+        { 
+            id: 'EMP-002', 
+            nombre: 'Ana Santos', 
+            rol: 'Responsable Logística', 
+            departamento: 'Almacén', 
+            estadoFichaje: 'fuera', 
+            ultimaEntrada: null, 
+            avatar: '👩‍🔬',
+            tareas: [
+                { id: 'T-201', titulo: 'Inventario mensual', descripcion: 'Conteo de stock de periféricos.', estado: 'pendiente', prioridad: 'Crítica' },
+                { id: 'T-202', titulo: 'Mantenimiento carretilla', descripcion: 'Revisión técnica de la maquinaria.', estado: 'en_progreso', prioridad: 'Media' },
+                { id: 'T-203', titulo: 'Optimizar estanterías', descripcion: 'Reorganizar pasillo 4 para mayor flujo.', estado: 'pendiente', prioridad: 'Baja' }
+            ]
+        },
+        { 
+            id: 'EMP-003', 
+            nombre: 'Juan Pérez', 
+            rol: 'Técnico de Ventas', 
+            departamento: 'Tienda', 
+            estadoFichaje: 'fuera', 
+            ultimaEntrada: null, 
+            avatar: '👨‍💻',
+            tareas: [
+                { id: 'T-301', titulo: 'Preparación pedido online', descripcion: 'Pedido #1045 - Envío urgente.', estado: 'en_progreso', prioridad: 'Alta' },
+                { id: 'T-302', titulo: 'Actualizar precios', descripcion: 'Etiquetado de nuevos productos de gaming.', estado: 'pendiente', prioridad: 'Media' },
+                { id: 'T-303', titulo: 'Atención cliente VIP', descripcion: 'Asesoramiento para configuración PC Master.', estado: 'completada', prioridad: 'Alta' }
+            ]
+        },
+        { 
+            id: 'EMP-004', 
+            nombre: 'Elena Torres', 
+            rol: 'Soporte IT', 
+            departamento: 'Sistemas', 
+            estadoFichaje: 'fuera', 
+            ultimaEntrada: null, 
+            avatar: '👩‍💻',
+            tareas: [
+                { id: 'T-401', titulo: 'Seguridad red', descripcion: 'Auditoría de firewalls y accesos remotos.', estado: 'pendiente', prioridad: 'Crítica' },
+                { id: 'T-402', titulo: 'Soporte usuario', descripcion: 'Reparar puesto 5 (problema de arranque).', estado: 'en_progreso', prioridad: 'Media' },
+                { id: 'T-403', titulo: 'Update ERP', descripcion: 'Instalar parches de seguridad en servidor.', estado: 'pendiente', prioridad: 'Alta' }
+            ]
+        }
+    ],
+    fichajes: [],
+    facturas: [
+        { id: 'FAC-2026-001', pedidoId: 'PED-1025', fecha: '2026-04-09', cliente: 'Carlos Ruiz', monto: 122, estado: 'cobrada' },
+        { id: 'FAC-2026-002', pedidoId: 'PED-1031', fecha: '2026-04-12', cliente: 'Pedro Martínez', monto: 50, estado: 'cobrada' }
+    ],
+    movimientos: [
+        { id: 'MOV-001', fecha: '2026-04-05', tipo: 'gasto', monto: 12500, concepto: 'Compra Stock: TechLogistics S.A.', refId: 'ORD-501' },
+        { id: 'MOV-002', fecha: '2026-04-09', tipo: 'ingreso', monto: 122, concepto: 'Cobro Factura FAC-2026-001', refId: 'FAC-2026-001' }
+    ],
+    departamentos: [
+        { 
+            id: 'DEP-1', 
+            nombre: 'Gerencia', 
+            objetivo: 'Dirección estratégica y finanzas.'
+        },
+        { 
+            id: 'DEP-2', 
+            nombre: 'Almacén', 
+            objetivo: 'Gestión de stock y suministros.'
+        },
+        { 
+            id: 'DEP-3', 
+            nombre: 'Tienda', 
+            objetivo: 'Atención al cliente y facturación.'
+        },
+        { 
+            id: 'DEP-4', 
+            nombre: 'Sistemas', 
+            objetivo: 'Mantenimiento de infraestructura IT.'
+        }
     ]
 };
 
-// Seed historical orders to populate "Anual" and "Mensual" charts beautifully
+// Seed historical data
 if (defaultDB.pedidos.length < 50) {
     const historicalStates = ['completado', 'completado', 'completado', 'completado', 'completado', 'incidencia'];
     for(let i=0; i<80; i++) {
@@ -129,41 +222,60 @@ if (defaultDB.pedidos.length < 50) {
         const y = dateObj.getFullYear();
         const m = String(dateObj.getMonth() + 1).padStart(2, '0');
         const d = String(dateObj.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${d}`;
+
+        const monto = Math.floor(Math.random() * 3000) + 50;
+        const estado = historicalStates[Math.floor(Math.random() * historicalStates.length)];
+        
         defaultDB.pedidos.push({
-            id: 'PED-H-' + i, fecha: `${y}-${m}-${d}`, cliente: 'Cliente Histórico ' + i, 
-            monto: Math.floor(Math.random() * 3000) + 50, 
-            estado: historicalStates[Math.floor(Math.random() * historicalStates.length)], origen: 'B2B'
+            id: 'PED-H-' + i, fecha: dateStr, cliente: 'Cliente Histórico ' + i, 
+            monto: monto, estado: estado, origen: 'B2B'
         });
+
+        // Si el pedido histórico está completado, crear factura y movimiento
+        if (estado === 'completado') {
+            const facId = 'FAC-H-' + i;
+            defaultDB.facturas.push({ id: facId, pedidoId: 'PED-H-' + i, fecha: dateStr, cliente: 'Cliente Histórico ' + i, monto: monto, estado: 'cobrada' });
+            defaultDB.movimientos.push({ id: 'MOV-H-' + i, fecha: dateStr, tipo: 'ingreso', monto: monto, concepto: 'Cobro Pedido Histórico', refId: facId });
+        }
+    }
+
+    // Añadir algunos gastos históricos también
+    for(let i=0; i<20; i++) {
+        const daysAgo = Math.floor(Math.random() * 360) + 2; 
+        const dateObj = new Date('2026-04-16T12:00:00Z');
+        dateObj.setDate(dateObj.getDate() - daysAgo);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        const montoGasto = Math.floor(Math.random() * 5000) + 1000;
+        defaultDB.movimientos.push({ id: 'MOV-G-' + i, fecha: dateStr, tipo: 'gasto', monto: montoGasto, concepto: 'Gasto Operativo Histórico', refId: 'ORD-H-' + i });
     }
 }
 
-// Incrementamos a V9 para el nuevo sistema de proveedores.
-const savedData = localStorage.getItem('erp_data_v9'); 
+// Incrementamos a V13 para el sistema contable integrado.
+const DB_VERSION = 'v13';
+const STORAGE_KEY = `erp_data_${DB_VERSION}`;
+const savedData = localStorage.getItem(STORAGE_KEY); 
 let DB;
 
 if (savedData) {
     DB = JSON.parse(savedData);
 } else {
     DB = JSON.parse(JSON.stringify(defaultDB)); 
-    // Limpieza de versiones pasadas
+    // Limpieza de todas las versiones pasadas
+    for(let i=1; i<=12; i++) {
+        localStorage.removeItem('erp_data_v' + i);
+    }
     localStorage.removeItem('erp_data'); 
-    localStorage.removeItem('erp_data_v2'); 
-    localStorage.removeItem('erp_data_v3'); 
-    localStorage.removeItem('erp_data_v4'); 
-    localStorage.removeItem('erp_data_v5'); 
-    localStorage.removeItem('erp_data_v6'); 
-    localStorage.removeItem('erp_data_v7'); 
-    localStorage.removeItem('erp_data_v8'); 
-    localStorage.setItem('erp_data_v9', JSON.stringify(DB));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
 }
 
 // Helpers
 window.saveERPData = function() {
-    localStorage.setItem('erp_data_v9', JSON.stringify(window.erpDB));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(window.erpDB));
 };
 
 window.resetERPData = function() {
-    localStorage.removeItem('erp_data_v8');
+    localStorage.removeItem(STORAGE_KEY);
     location.reload();
 };
 

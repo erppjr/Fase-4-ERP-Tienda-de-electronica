@@ -95,7 +95,49 @@ document.addEventListener('DOMContentLoaded', () => {
         if(window.saveERPData) window.saveERPData();
     }
 
-    // --- Sistema de Vistas ---
+    // --- Estado de Navegación Finanzas ---
+    window.finanzasNav = { tab: 'dashboard' };
+    window.finanzasFilters = {
+        busqueda: '',
+        fechaDesde: '',
+        fechaHasta: '',
+        tipo: 'todos',
+        orden: 'reciente' // 'reciente', 'antiguo', 'monto_asc', 'monto_desc', 'alfa'
+    };
+
+    // --- Helpers Contables ---
+    window.registrarMovimiento = (tipo, monto, concepto, refId) => {
+        const mov = {
+            id: 'MOV-' + Date.now(),
+            fecha: new Date().toLocaleDateString('sv-SE'),
+            tipo: tipo, // 'ingreso' o 'gasto'
+            monto: Number(monto),
+            concepto: concepto,
+            refId: refId
+        };
+        if(!window.erpDB.movimientos) window.erpDB.movimientos = [];
+        window.erpDB.movimientos.unshift(mov);
+        window.saveERPData();
+    };
+
+    window.generarFactura = (pedido) => {
+        const idFactura = 'FAC-' + new Date().getFullYear() + '-' + (window.erpDB.facturas.length + 1).toString().padStart(3, '0');
+        const factura = {
+            id: idFactura,
+            pedidoId: pedido.id,
+            fecha: new Date().toLocaleDateString('sv-SE'),
+            cliente: pedido.cliente,
+            monto: pedido.monto,
+            estado: 'cobrada'
+        };
+        if(!window.erpDB.facturas) window.erpDB.facturas = [];
+        window.erpDB.facturas.unshift(factura);
+        window.saveERPData();
+        
+        // Registrar el ingreso en movimientos
+        window.registrarMovimiento('ingreso', pedido.monto, `Cobro Pedido ${pedido.id}`, idFactura);
+        return factura;
+    };
     function renderView(viewName) {
         viewContainer.innerHTML = '';
         
@@ -111,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'pedidos': renderPedidos(); break;
             case 'incidencias': renderIncidencias(); break;
             case 'proveedores': renderProveedores(); break;
+            case 'empleados': renderEmpleados(); break;
             case 'finanzas': renderFinanzas(); break;
             default: viewContainer.innerHTML = '<h1>Vista no encontrada</h1>';
         }
@@ -670,6 +713,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         p.estado = targetEstado;
+
+        // --- Lógica Financiera ---
+        if (targetEstado === 'completado') {
+            window.generarFactura(p);
+        }
+
         window.saveERPData();
         actualizarKPIs();
         
@@ -1473,6 +1522,12 @@ document.addEventListener('DOMContentLoaded', () => {
             abrirModalRecuperacionPedido(id, i.relacionId, i.categoria);
         } else {
             i.estado = 'resuelta';
+            
+            // Si tiene un coste asociado, registrar el gasto
+            if (i.coste > 0) {
+                window.registrarMovimiento('gasto', i.coste, `Reparación/Resolución: ${i.titulo}`, i.id);
+            }
+
             window.saveERPData();
             renderIncidenciasCategoria(cat);
         }
@@ -2122,13 +2177,19 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Mercadería recibida. El stock ha sido incrementado automáticamente.');
         }
 
-        // Si pasa a incidencia, abrir modal de reporte
         if(nuevoEstado === 'incidencia') {
             p.estado = 'incidencia';
             window.saveERPData();
             window.abrirNuevaIncidenciaCat('Proveedores', id);
         } else {
+            const oldEstado = p.estado;
             p.estado = nuevoEstado;
+            
+            // Si se completa una compra, registrar el gasto
+            if (nuevoEstado === 'completado' && oldEstado !== 'completado') {
+                window.registrarMovimiento('gasto', p.monto, `Compra Stock: ${p.proveedor}`, p.id);
+            }
+            
             window.saveERPData();
         }
 
@@ -2141,74 +2202,798 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPedidosProveedor(tipo);
     };
 
-    // --- Render Finanzas (Solo Gerente) ---
-    function renderFinanzas() {
-        if (window.currentRole !== 'gerente') {
-            viewContainer.innerHTML = '<div class="view-header"><h1 class="text-danger">Acceso Denegado</h1><p>Módulo de acceso exclusivo para la Gerencia General.</p></div>';
-            return;
+    // --- Render Empleados (RRHH) ---
+    // --- Estado de Filtros y Pestañas Empleados ---
+    if (!window.empleadosFiltros) {
+        window.empleadosFiltros = { depto: '', orden: 'asc', enPlanta: false };
+    }
+    if (!window.empleadosTab) {
+        window.empleadosTab = 'personal';
+    }
+
+    function renderEmpleados() {
+        actualizarKPIs();
+        // Reset tareas nav only if we are in the start of the view or entering tasks tab for the first time
+        if (!window.tareasNav) {
+            window.tareasNav = { nivel: 'inicio', depto: null, empId: null };
         }
+        const { empleados, fichajes, departamentos } = window.erpDB;
+        const role = window.currentRole;
+        const activos = empleados.filter(e => e.estadoFichaje === 'dentro').length;
+        const tareasPendientes = empleados.reduce((acc, e) => acc + (e.tareas ? e.tareas.filter(t => t.estado !== 'completada').length : 0), 0);
 
-        const facturasCompletadas = window.erpDB.pedidos.filter(p => p.estado === 'completado');
-        const ingresosBrutos = facturasCompletadas.reduce((acc, p) => acc + p.monto, 0);
-        const impuestos = ingresosBrutos * 0.21; // 21% IVA
-        const totalGastosFijos = 45000; // Estático para simulación
+        // Aplicar Filtros y Orden
+        let listaFiltrada = [...empleados];
+        if (window.empleadosFiltros.depto) {
+            listaFiltrada = listaFiltrada.filter(e => e.departamento === window.empleadosFiltros.depto);
+        }
+        if (window.empleadosFiltros.enPlanta) {
+            listaFiltrada = listaFiltrada.filter(e => e.estadoFichaje === 'dentro');
+        }
+        listaFiltrada.sort((a, b) => {
+            const res = a.nombre.localeCompare(b.nombre);
+            return window.empleadosFiltros.orden === 'asc' ? res : -res;
+        });
 
-        const beneficioNeto = ingresosBrutos - impuestos - totalGastosFijos;
-
-        const filasFacturas = facturasCompletadas.slice(0, 10).map(f => `
-            <tr style="transition: background 0.2s;" onmouseover="this.style.background='rgba(99, 102, 241, 0.05)'" onmouseout="this.style.background='transparent'">
-                <td style="font-weight: 600; color:var(--primary);">FAC-${f.id.split('-')[1]}</td>
-                <td><span style="font-size:12px;color:var(--text-muted);display:block;">Ref.</span>${f.id}</td>
-                <td>${f.fecha}</td>
-                <td><b>${f.cliente}</b></td>
-                <td style="font-weight: 600;">$${f.monto.toLocaleString()}</td>
-                <td><span style="background:var(--success);color:white;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;">COBRADA</span></td>
-            </tr>
-        `).join('');
-
-        viewContainer.innerHTML = `
-            <div class="view-header">
+        const html = `
+            <div class="view-header" style="margin-bottom:16px;">
                 <div>
-                    <h1 class="view-title">Libro Mayor y Finanzas</h1>
-                    <p class="view-subtitle">Monitor contable, impuestos y Facturación (Privilegios de Gerente)</p>
-                </div>
-                <div style="display:flex; gap:12px;">
-                    <button class="btn btn-secondary" onclick="alert('Exportando modelo 303...')"><i class="ph ph-download-simple"></i> Exportar Fiscal</button>
-                </div>
-            </div>
-            
-            <div class="card-grid">
-                <div class="kpi-card" style="border-left: 4px solid #00e676">
-                    <div class="kpi-header"><span style="color:var(--text-muted);">Ingreso Bruto Volumétrico</span><i class="ph ph-trend-up text-success" style="background:rgba(0,230,118,0.1); padding:8px; border-radius:8px;"></i></div>
-                    <div class="kpi-value text-success">$${ingresosBrutos.toLocaleString()}</div>
-                    <p class="view-subtitle" style="margin-top: 8px;">Facturación total cobrada por envíos logísticos.</p>
-                </div>
-                <div class="kpi-card" style="border-left: 4px solid #ff3d71">
-                    <div class="kpi-header"><span style="color:var(--text-muted);">Retención Fiscal IVA (21%)</span><i class="ph ph-buildings text-danger" style="background:rgba(255,61,113,0.1); padding:8px; border-radius:8px;"></i></div>
-                    <div class="kpi-value text-danger">-$${impuestos.toLocaleString()}</div>
-                    <p class="view-subtitle" style="margin-top: 8px;">Obligaciones tributarias retenidas.</p>
-                </div>
-                <div class="kpi-card" style="border-left: 4px solid #4d7cff">
-                    <div class="kpi-header"><span style="color:var(--text-muted);">Beneficio Neto</span><i class="ph ph-bank text-primary" style="background:rgba(77,124,255,0.1); padding:8px; border-radius:8px;"></i></div>
-                    <div class="kpi-value text-primary">$${beneficioNeto.toLocaleString()}</div>
-                    <p class="view-subtitle" style="margin-top: 8px;">Menos Gasto Fijo Operativo (-$${totalGastosFijos.toLocaleString()})</p>
+                    <h1 class="view-title">Gestión de Empleados</h1>
+                    <p class="view-subtitle">Administración de personal, control horario y tareas</p>
                 </div>
             </div>
 
-            <div class="table-container" style="margin-top: 24px;">
-                <div style="padding: 16px 24px; border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background: rgba(0,0,0,0.01);">
-                    <div>
-                        <h3 style="margin:0; font-size:16px;">Registro de Facturas Emitidas (Automático)</h3>
-                        <span style="font-size:13px; color:var(--text-muted);">Generadas nativamente a partir de los Pedidos Completados.</span>
+            <!-- Barra de Pestañas Superior -->
+            <div style="display:flex; gap:8px; margin-bottom:24px; background:var(--bg-color); padding:6px; border-radius:12px; border:1px solid var(--border-color); width:fit-content;">
+                <button class="btn ${window.empleadosTab === 'personal' ? 'btn-primary' : 'btn-secondary'}" 
+                        style="border:none; padding:8px 20px; font-weight:600; font-size:13px;"
+                        onclick="window.setEmpleadosTab('personal')">
+                    <i class="ph ph-users"></i> Plantilla y Fichaje
+                </button>
+                <button class="btn ${window.empleadosTab === 'tareas' ? 'btn-primary' : 'btn-secondary'}" 
+                        style="border:none; padding:8px 20px; font-weight:600; font-size:13px;"
+                        onclick="window.setEmpleadosTab('tareas')">
+                    <i class="ph ph-list-checks"></i> Gestión de Tareas
+                </button>
+            </div>
+
+            <div class="card-grid" style="margin-bottom: 24px; grid-template-columns: 1fr 1fr;">
+                <div class="kpi-card" style="border-left: 4px solid var(--primary);">
+                    <div class="kpi-header"><span>Plantilla Total</span><i class="ph ph-users-three"></i></div>
+                    <div class="kpi-value">${empleados.length}</div>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid var(--success);">
+                    <div class="kpi-header"><span>En Planta (Fichados)</span><i class="ph ph-clock-user text-success"></i></div>
+                    <div class="kpi-value text-success">${activos}</div>
+                </div>
+            </div>
+
+            ${window.empleadosTab === 'personal' ? `
+                <div style="display:grid; grid-template-columns: 1.5fr 1fr; gap:24px;">
+                    <!-- SECCIÓN 1: LISTA DE PERSONAL Y CONTROL -->
+                    <div class="card" style="padding:24px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border-color); display:flex; flex-direction:column;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                            <h2 class="view-title" style="font-size:18px; margin:0; display:flex; align-items:center; gap:10px;">
+                                <i class="ph ph-users-three" style="color:var(--primary);"></i> Lista de Personal
+                            </h2>
+                            ${role === 'gerente' ? `<button class="btn btn-primary" style="font-size:12px; padding:6px 12px;" onclick="window.abrirModalAddEmpleado()"><i class="ph ph-user-plus"></i> Añadir</button>` : ''}
+                        </div>
+
+                        <!-- Barra de Filtros -->
+                        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-bottom:20px; background:var(--bg-color); padding:12px; border-radius:10px; border:1px solid var(--border-color);">
+                            <div>
+                                <label style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px; display:block;">Departamento</label>
+                                <select style="width:100%; font-size:12px; padding:4px; border-radius:4px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main);" 
+                                        onchange="window.cambiarFiltroEmpleado('depto', this.value)">
+                                    <option value="">Todos</option>
+                                    ${departamentos.map(d => `<option value="${d.nombre}" ${window.empleadosFiltros.depto === d.nombre ? 'selected' : ''}>${d.nombre}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px; display:block;">Orden</label>
+                                <select style="width:100%; font-size:12px; padding:4px; border-radius:4px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main);" 
+                                        onchange="window.cambiarFiltroEmpleado('orden', this.value)">
+                                    <option value="asc" ${window.empleadosFiltros.orden === 'asc' ? 'selected' : ''}>Nombre (A-Z)</option>
+                                    <option value="desc" ${window.empleadosFiltros.orden === 'desc' ? 'selected' : ''}>Nombre (Z-A)</option>
+                                </select>
+                            </div>
+                            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center;">
+                                <label style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px; display:block;">En Planta</label>
+                                <input type="checkbox" ${window.empleadosFiltros.enPlanta ? 'checked' : ''} 
+                                       onchange="window.cambiarFiltroEmpleado('enPlanta', this.checked)">
+                            </div>
+                        </div>
+                        
+                        <div style="display:grid; grid-template-columns: 1fr; gap:12px;">
+                            ${listaFiltrada.map(e => {
+                                const estaDentro = e.estadoFichaje === 'dentro';
+                                const isAdmin = role === 'gerente' || role === 'almacen';
+                                const isSelf = e.id === 'EMP-003' && role === 'tienda';
+                                const canFichar = isAdmin || isSelf;
+
+                                return `
+                                    <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:16px; border-radius:12px; display:flex; align-items:center; justify-content:space-between; transition:all 0.2s; ${estaDentro ? 'border-color:var(--success);' : ''} ${!canFichar ? 'opacity: 0.6;' : ''}">
+                                        <div style="display:flex; align-items:center; gap:12px;">
+                                            <span style="font-size:24px;">${e.avatar}</span>
+                                            <div>
+                                                <div style="font-weight:600; font-size:14px;">${e.nombre}</div>
+                                                <div style="font-size:11px; color:var(--text-muted);">${e.departamento}</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:12px;">
+                                            ${role === 'gerente' ? `
+                                                <button onclick="window.confirmarEliminarEmpleado('${e.id}', '${e.nombre}')" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:16px; padding:4px;" title="Eliminar Empleado">
+                                                    <i class="ph ph-trash"></i>
+                                                </button>
+                                            ` : ''}
+                                            
+                                            ${canFichar ? `
+                                                <button class="btn ${estaDentro ? 'btn-secondary' : 'btn-primary'}" 
+                                                        style="padding:6px 12px; font-size:11px; font-weight:700; border-radius:8px;"
+                                                        onclick="window.gestionarFichaje('${e.id}')">
+                                                    ${estaDentro ? '<i class="ph ph-sign-out"></i> SALIDA' : '<i class="ph ph-sign-in"></i> ENTRADA'}
+                                                </button>
+                                            ` : `
+                                                <span style="font-size: 10px; color: var(--text-muted); font-weight: bold;"><i class="ph ph-lock"></i> BLOQUEADO</span>
+                                            `}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                            ${listaFiltrada.length === 0 ? '<p style="text-align:center; color:var(--text-muted); font-size:12px; padding:20px;">No hay empleados que coincidan con los filtros.</p>' : ''}
+                        </div>
+                    </div>
+
+                    <!-- RESUMEN RÁPIDO DE ACTIVIDAD -->
+                    <div style="display:flex; flex-direction:column; gap:24px;">
+                        <div class="card" style="padding:24px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border-color);">
+                            <h3 style="font-size:16px; margin-bottom:16px; display:flex; align-items:center; gap:10px;">
+                                <i class="ph ph-clock-user" style="color:var(--success);"></i> Estado de Planta
+                            </h3>
+                            <div style="display:grid; grid-template-columns: 1fr; gap:12px;">
+                                <div style="padding:16px; background:var(--bg-color); border-radius:12px; border-left:4px solid var(--success);">
+                                    <div style="font-size:24px; font-weight:700; color:var(--success);">${activos}</div>
+                                    <div style="font-size:12px; color:var(--text-muted);">Empleados en planta</div>
+                                </div>
+                                <div style="padding:16px; background:var(--bg-color); border-radius:12px; border-left:4px solid var(--primary);">
+                                    <div style="font-size:24px; font-weight:700; color:var(--primary);">${empleados.length}</div>
+                                    <div style="font-size:12px; color:var(--text-muted);">Plantilla Total</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card" style="padding:24px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border-color); cursor:pointer; transition:all 0.2s; border:1px dashed var(--primary);" onclick="window.setEmpleadosTab('tareas')">
+                            <h3 style="font-size:16px; margin-bottom:8px;">Gestión de Tareas</h3>
+                            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">${tareasPendientes} tareas pendientes en total.</p>
+                            <span style="color:var(--primary); font-size:12px; font-weight:600;">Ir a Tareas <i class="ph ph-arrow-right"></i></span>
+                        </div>
                     </div>
                 </div>
+            ` : `
+                <!-- VISTA DE TAREAS -->
+                <div id="portal-tareas-container" class="card" style="padding:32px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border-color); min-height:500px;">
+                    <!-- El contenido se maneja dinámicamente -->
+                </div>
+            `}
+
+            <!-- SECCIÓN 3: HISTORIAL RECIENTE -->
+            <div class="table-container" style="margin-top:24px;">
+                <div style="padding:20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:16px; margin:0;">Registro de Actividad (Fichajes)</h3>
+                    <button class="btn btn-secondary" style="font-size:11px;" onclick="renderView('empleados')">Refrescar</button>
+                </div>
                 <table>
-                    <thead><tr><th>ID Factura</th><th>Ref. Albarán</th><th>Fecha Emisión</th><th>Cliente Pyme</th><th>Monto Total</th><th>Estado Contable</th></tr></thead>
-                    <tbody>${filasFacturas}</tbody>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Empleado</th>
+                            <th>Evento</th>
+                            <th>Hora</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${fichajes.length > 0 ? fichajes.slice(-10).reverse().map(f => {
+                            const emp = empleados.find(e => e.id === f.empleadoId);
+                            return `
+                                <tr>
+                                    <td>${f.fecha}</td>
+                                    <td style="font-weight:600;">${emp ? emp.nombre : 'Desconocido'}</td>
+                                    <td><span style="color:${f.tipo === 'Entrada' ? 'var(--success)' : 'var(--danger)'}; font-weight:bold;">${f.tipo.toUpperCase()}</span></td>
+                                    <td>${f.hora}</td>
+                                    <td><span class="status success">REGISTRADO</span></td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-muted);">No hay fichajes registrados hoy</td></tr>'}
+                    </tbody>
                 </table>
             </div>
         `;
+
+        viewContainer.innerHTML = html;
+        if(window.empleadosTab === 'tareas') {
+            window.renderPortalTareas();
+        }
     }
+
+    window.setEmpleadosTab = (tab) => {
+        window.empleadosTab = tab;
+        renderView('empleados');
+    };
+
+    // --- Sistema de Tareas (Navegación por Niveles) ---
+    window.tareasNav = { nivel: 'inicio', depto: null, empId: null };
+
+    window.renderPortalTareas = () => {
+        const container = document.getElementById('portal-tareas-container');
+        if(!container) return;
+
+        const role = window.currentRole;
+        const isAdmin = role === 'gerente' || role === 'almacen';
+        
+        // Si es tienda, solo ve sus tareas (EMP-003 Juan Pérez para la simulación)
+        if (role === 'tienda') {
+            window.tareasNav.nivel = 'tareas-empleado';
+            window.tareasNav.empId = 'EMP-003';
+        } else if (window.tareasNav.nivel === 'inicio' && isAdmin) {
+            // Para administradores, saltar directamente a departamentos
+            window.tareasNav.nivel = 'deptos';
+        }
+
+        let headerHtml = '';
+        let bodyHtml = '';
+
+        const backBtn = `<button class="btn btn-secondary" style="padding:4px 8px; font-size:12px; margin-bottom:12px;" onclick="window.goBackTareas()"><i class="ph ph-arrow-left"></i> Volver</button>`;
+
+        switch (window.tareasNav.nivel) {
+            case 'deptos':
+                headerHtml = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                        <h2 style="font-size:18px; margin:0; display:flex; align-items:center; gap:10px;">
+                            <i class="ph ph-list-checks" style="color:var(--primary);"></i> Gestión de Tareas
+                        </h2>
+                        ${isAdmin ? `<button class="btn btn-primary" style="font-size:12px;" onclick="window.abrirModalAsignarTarea()"><i class="ph ph-plus-circle"></i> Asignar</button>` : ''}
+                    </div>
+                    <h3 style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">Selecciona un departamento para ver su equipo:</h3>
+                `;
+                bodyHtml = `
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                        ${window.erpDB.departamentos.map(d => `
+                            <div class="subcat-card" style="flex-direction:column; align-items:flex-start; padding:20px; border-radius:12px; border-width:1px;" onclick="window.setNivelTareas('empleados', '${d.nombre}')">
+                                <span style="font-weight:700; color:var(--text-main); font-size:15px; margin-bottom:4px;">${d.nombre}</span>
+                                <span style="font-size:11px; color:var(--text-muted); background:var(--bg-color); padding:2px 8px; border-radius:10px;">
+                                    ${window.erpDB.empleados.filter(e => e.departamento === d.nombre).length} Empleados
+                                </span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                break;
+
+            case 'empleados':
+                headerHtml = `
+                    ${backBtn}
+                    <h2 style="font-size:18px; margin-bottom:16px;">Equipo: ${window.tareasNav.depto}</h2>
+                `;
+                const empleadosDepto = window.erpDB.empleados.filter(e => e.departamento === window.tareasNav.depto);
+                bodyHtml = `
+                    <div style="display:grid; grid-template-columns: 1fr; gap:10px;">
+                        ${empleadosDepto.map(e => `
+                            <div class="subcat-card" style="justify-content:space-between;" onclick="window.setNivelTareas('tareas-empleado', null, '${e.id}')">
+                                <div style="display:flex; align-items:center; gap:12px;">
+                                    <span style="font-size:20px;">${e.avatar}</span>
+                                    <span style="font-weight:600;">${e.nombre}</span>
+                                </div>
+                                <span class="badge-count">${e.tareas ? e.tareas.filter(t => t.estado !== 'completada').length : 0}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                break;
+
+            case 'tareas-empleado':
+                const emp = window.erpDB.empleados.find(e => e.id === window.tareasNav.empId);
+                const isOwnTasks = role === 'tienda';
+                headerHtml = `
+                    ${!isOwnTasks ? backBtn : ''}
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+                        <span style="font-size:32px;">${emp.avatar}</span>
+                        <div>
+                            <h2 style="font-size:18px; margin:0;">Tareas de ${emp.nombre}</h2>
+                            <p style="font-size:12px; color:var(--text-muted);">${emp.rol}</p>
+                        </div>
+                    </div>
+                `;
+                
+                const tareas = emp.tareas || [];
+                if (tareas.length === 0) {
+                    bodyHtml = `<div style="text-align:center; padding:40px; color:var(--text-muted); border:1px dashed var(--border-color); border-radius:12px;">No hay tareas asignadas.</div>`;
+                } else {
+                    bodyHtml = `
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            ${tareas.map(t => {
+                                const prioColor = t.prioridad === 'Crítica' ? 'var(--danger)' : (t.prioridad === 'Alta' ? 'var(--warning)' : 'var(--primary)');
+                                return `
+                                    <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:16px; border-left:4px solid ${prioColor};">
+                                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                                            <h4 style="font-size:14px; margin:0;">${t.titulo}</h4>
+                                            <span class="status ${t.estado === 'completada' ? 'success' : 'info'}" style="font-size:10px;">${t.estado.toUpperCase()}</span>
+                                        </div>
+                                        <p style="font-size:12px; color:var(--text-muted); line-height:1.4;">${t.descripcion || 'Sin descripción detallada.'}</p>
+                                        <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
+                                            <span style="font-size:10px; font-weight:700; color:${prioColor}; text-transform:uppercase;">Prioridad ${t.prioridad}</span>
+                                            ${t.estado !== 'completada' ? `<button class="btn btn-secondary" style="padding:2px 8px; font-size:10px;" onclick="window.completarTarea('${emp.id}', '${t.id}')">Marcar Completada</button>` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `;
+                }
+                break;
+        }
+
+        container.innerHTML = headerHtml + bodyHtml;
+    };
+
+    window.setNivelTareas = (nivel, depto = null, empId = null) => {
+        window.tareasNav.nivel = nivel;
+        if(depto) window.tareasNav.depto = depto;
+        if(empId) window.tareasNav.empId = empId;
+        window.renderPortalTareas();
+    };
+
+    window.goBackTareas = () => {
+        if(window.tareasNav.nivel === 'deptos') window.tareasNav.nivel = 'inicio';
+        else if(window.tareasNav.nivel === 'empleados') window.tareasNav.nivel = 'deptos';
+        else if(window.tareasNav.nivel === 'tareas-empleado') window.tareasNav.nivel = 'empleados';
+        window.renderPortalTareas();
+    };
+
+    window.cambiarFiltroEmpleado = (filtro, valor) => {
+        window.empleadosFiltros[filtro] = valor;
+        renderView('empleados');
+    };
+
+    window.abrirModalAddEmpleado = () => {
+        const deptos = window.erpDB.departamentos;
+        const content = `
+            <div class="form-group">
+                <label>Nombre Completo</label>
+                <input type="text" id="add-emp-nombre" class="form-control" placeholder="Ej: Maria García">
+            </div>
+            <div class="form-group">
+                <label>Rol / Puesto</label>
+                <input type="text" id="add-emp-rol" class="form-control" placeholder="Ej: Soporte Técnico">
+            </div>
+            <div class="form-group">
+                <label>Departamento</label>
+                <select id="add-emp-depto" class="form-control">
+                    ${deptos.map(d => `<option value="${d.nombre}">${d.nombre}</option>`).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Avatar (Emoji)</label>
+                <input type="text" id="add-emp-avatar" class="form-control" value="👤" placeholder="Emoji o letra">
+            </div>
+            <button class="btn btn-primary" style="width:100%; margin-top:12px;" onclick="window.guardarNuevoEmpleado()">Crear Empleado</button>
+        `;
+        abrirModal('Dar de Alta Empleado', content);
+    };
+
+    window.guardarNuevoEmpleado = () => {
+        const nombre = document.getElementById('add-emp-nombre').value.trim();
+        const rol = document.getElementById('add-emp-rol').value.trim();
+        const depto = document.getElementById('add-emp-depto').value;
+        const avatar = document.getElementById('add-emp-avatar').value.trim();
+
+        if(!nombre || !rol) return alert('Por favor, rellena los campos obligatorios.');
+
+        const nuevo = {
+            id: 'EMP-' + (window.erpDB.empleados.length + 1).toString().padStart(3, '0'),
+            nombre: nombre,
+            rol: rol,
+            departamento: depto,
+            estadoFichaje: 'fuera',
+            ultimaEntrada: null,
+            avatar: avatar || '👤',
+            tareas: []
+        };
+
+        window.erpDB.empleados.push(nuevo);
+        window.saveERPData();
+        cerrarModal();
+        renderView('empleados');
+        alert(`${nombre} ha sido añadido a la plantilla.`);
+    };
+
+    window.confirmarEliminarEmpleado = (id, nombre) => {
+        if(confirm(`¿Estás seguro de que deseas eliminar a ${nombre}? Esta acción no se puede deshacer.`)) {
+            window.erpDB.empleados = window.erpDB.empleados.filter(e => e.id !== id);
+            window.saveERPData();
+            renderView('empleados');
+        }
+    };
+
+    window.completarTarea = (empId, tareaId) => {
+        const emp = window.erpDB.empleados.find(e => e.id === empId);
+        if(emp && emp.tareas) {
+            const tarea = emp.tareas.find(t => t.id === tareaId);
+            if(tarea) {
+                tarea.estado = 'completada';
+                window.saveERPData();
+                actualizarKPIs();
+                window.renderPortalTareas();
+            }
+        }
+    };
+
+    window.abrirModalAsignarTarea = () => {
+        const deptos = window.erpDB.departamentos;
+        const deptosOptions = deptos.map(d => `<option value="${d.nombre}">${d.nombre}</option>`).join('');
+
+        const content = `
+            <div class="form-group">
+                <label>Departamento</label>
+                <select id="task-dept-select" class="form-control" onchange="window.updateEmpSelect(this.value)">
+                    <option value="">-- Seleccionar --</option>
+                    ${deptosOptions}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Empleado</label>
+                <select id="task-emp-select" class="form-control">
+                    <option value="">-- Seleccione departamento primero --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Título / Descripción Breve</label>
+                <input type="text" id="task-title" class="form-control" placeholder="Ej: Revisar stock de teclados">
+            </div>
+            <div class="form-group">
+                <label>Descripción Detallada</label>
+                <textarea id="task-desc" class="form-control" rows="3" placeholder="Detalles de la tarea..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Prioridad</label>
+                <select id="task-prio" class="form-control">
+                    <option value="Baja">Baja</option>
+                    <option value="Media" selected>Media</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Crítica">Crítica</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" style="width:100%; margin-top:12px;" onclick="window.guardarNuevaTarea()">Asignar Tarea</button>
+        `;
+        abrirModal('Asignar Nueva Tarea', content);
+    };
+
+    window.updateEmpSelect = (depto) => {
+        const select = document.getElementById('task-emp-select');
+        if(!depto) {
+            select.innerHTML = '<option value="">-- Seleccione departamento primero --</option>';
+            return;
+        }
+        const emps = window.erpDB.empleados.filter(e => e.departamento === depto);
+        select.innerHTML = emps.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+    };
+
+    window.guardarNuevaTarea = () => {
+        const empId = document.getElementById('task-emp-select').value;
+        const titulo = document.getElementById('task-title').value.trim();
+        const desc = document.getElementById('task-desc').value.trim();
+        const prio = document.getElementById('task-prio').value;
+
+        if(!empId || !titulo) return alert('Por favor, selecciona un empleado y escribe un título.');
+
+        const emp = window.erpDB.empleados.find(e => e.id === empId);
+        if(emp) {
+            if(!emp.tareas) emp.tareas = [];
+            emp.tareas.unshift({
+                id: 'T-' + Date.now(),
+                titulo: titulo,
+                descripcion: desc,
+                estado: 'pendiente',
+                prioridad: prio
+            });
+            window.saveERPData();
+            actualizarKPIs();
+            cerrarModal();
+            // Si el portal de tareas está mostrando a ese empleado, refrescar
+            if(window.tareasNav.nivel === 'tareas-empleado' && window.tareasNav.empId === empId) {
+                window.renderPortalTareas();
+            } else if(window.tareasNav.nivel === 'inicio') {
+                window.renderPortalTareas();
+            }
+            alert(`Tarea asignada a ${emp.nombre}`);
+        }
+    };
+
+    window.gestionarFichaje = (empId) => {
+        const emp = window.erpDB.empleados.find(e => e.id === empId);
+        if(!emp) return;
+
+        const ahora = new Date();
+        const horaStr = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const fechaStr = ahora.toLocaleDateString('sv-SE');
+
+        if(emp.estadoFichaje === 'fuera') {
+            emp.estadoFichaje = 'dentro';
+            emp.ultimaEntrada = ahora.toISOString();
+            window.erpDB.fichajes.push({
+                id: 'FICH-' + Date.now(),
+                empleadoId: empId,
+                fecha: fechaStr,
+                hora: horaStr,
+                tipo: 'Entrada'
+            });
+        } else {
+            emp.estadoFichaje = 'fuera';
+            window.erpDB.fichajes.push({
+                id: 'FICH-' + Date.now(),
+                empleadoId: empId,
+                fecha: fechaStr,
+                hora: horaStr,
+                tipo: 'Salida'
+            });
+        }
+
+        window.saveERPData();
+        renderEmpleados();
+        
+        // Alerta visual discreta
+        const toast = document.createElement('div');
+        toast.style = "position:fixed; bottom:24px; right:24px; background:var(--primary); color:white; padding:12px 24px; border-radius:8px; box-shadow:var(--shadow-lg); z-index:9999; font-weight:600; animation:slideUp 0.3s ease-out;";
+        toast.innerHTML = `<i class="ph ph-check-circle"></i> Fichaje de ${emp.nombre} registrado: ${emp.estadoFichaje.toUpperCase()}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+
+    // Estilo para el toast
+    if (!document.getElementById('erp-extra-styles')) {
+        const style = document.createElement('style');
+        style.id = 'erp-extra-styles';
+        style.innerHTML = `
+            @keyframes slideUp { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // --- Render Finanzas (Rediseño Funcional y Data-Driven) ---
+    function renderFinanzas() {
+        if (window.currentRole !== 'gerente') {
+            viewContainer.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:60vh; text-align:center;">
+                    <i class="ph ph-lock-keyhole" style="font-size:64px; color:var(--danger); margin-bottom:16px;"></i>
+                    <h1 style="font-size:24px; color:var(--text-main);">Acceso Restringido</h1>
+                    <p style="color:var(--text-muted); max-width:400px;">Este módulo contiene información sensible de la empresa y solo es accesible para la Gerencia General.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const { pedidos, incidencias, devoluciones, pedidosProveedor, facturas, movimientos } = window.erpDB;
+
+        const navHtml = `
+            <div style="display:flex; gap:12px; margin-bottom:24px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+                <button class="btn ${window.finanzasNav.tab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}" onclick="window.setFinanzasTab('dashboard')">Dashboard Económico</button>
+                <button class="btn ${window.finanzasNav.tab === 'facturas' ? 'btn-primary' : 'btn-secondary'}" onclick="window.setFinanzasTab('facturas')">Registro de Facturas</button>
+                <button class="btn ${window.finanzasNav.tab === 'diario' ? 'btn-primary' : 'btn-secondary'}" onclick="window.setFinanzasTab('diario')">Libro Diario (Movimientos)</button>
+            </div>
+        `;
+
+        if (window.finanzasNav.tab === 'dashboard') {
+            // ... (Cálculos dinámicos reales basados en MOVIMIENTOS - sin cambios)
+            const ingresosTotales = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
+            const gastosTotales = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((acc, m) => acc + m.monto, 0);
+            const ingresosRetenidos = pedidos.filter(p => ['pendiente', 'en_proceso', 'incidencia'].includes(p.estado)).reduce((acc, p) => acc + p.monto, 0);
+            const beneficioNeto = ingresosTotales - gastosTotales;
+
+            // Procesar datos para la gráfica
+            const mesesMap = {};
+            const nombresMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const hoy = new Date();
+            for(let i=3; i>=0; i--) {
+                const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+                const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+                mesesMap[key] = { label: nombresMeses[d.getMonth()], ingreso: 0, gasto: 0 };
+            }
+            (movimientos || []).forEach(m => {
+                const key = m.fecha.substring(0, 7);
+                if (mesesMap[key]) {
+                    if (m.tipo === 'ingreso') mesesMap[key].ingreso += m.monto;
+                    else mesesMap[key].gasto += m.monto;
+                }
+            });
+            const sortedKeys = Object.keys(mesesMap).sort();
+            const labelsChart = sortedKeys.map(k => mesesMap[k].label);
+            const dataIngresos = sortedKeys.map(k => mesesMap[k].ingreso);
+            const dataGastos = sortedKeys.map(k => mesesMap[k].gasto);
+
+            viewContainer.innerHTML = `
+                <div class="view-header">
+                    <div><h1 class="view-title">Control Financiero Real</h1><p class="view-subtitle">Monitor de rentabilidad basado en el Libro Diario</p></div>
+                </div>
+                ${navHtml}
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:20px; margin-bottom:32px;">
+                    <div class="kpi-card" style="border-top:4px solid var(--success);"><span style="font-size:12px; color:var(--text-muted);">INGRESOS (LIBRO DIARIO)</span><div style="font-size:28px; font-weight:800; color:var(--success); margin-top:8px;">$${ingresosTotales.toLocaleString()}</div></div>
+                    <div class="kpi-card" style="border-top:4px solid var(--warning);"><span style="font-size:12px; color:var(--text-muted);">PREVISIÓN (PEDIDOS CURSO)</span><div style="font-size:28px; font-weight:800; color:var(--warning); margin-top:8px;">$${ingresosRetenidos.toLocaleString()}</div></div>
+                    <div class="kpi-card" style="border-top:4px solid var(--danger);"><span style="font-size:12px; color:var(--text-muted);">GASTOS CONSOLIDADOS</span><div style="font-size:28px; font-weight:800; color:var(--danger); margin-top:8px;">$${gastosTotales.toLocaleString()}</div></div>
+                    <div class="kpi-card" style="border-top:4px solid var(--primary);"><span style="font-size:12px; color:var(--text-muted);">MARGEN NETO</span><div style="font-size:28px; font-weight:800; color:var(--primary); margin-top:8px;">$${beneficioNeto.toLocaleString()}</div></div>
+                </div>
+                <div style="display:grid; grid-template-columns: 2.2fr 1fr; gap:24px;">
+                    <div class="card" style="padding:24px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border-color);"><h3 style="margin-bottom:20px; font-size:16px;">Tendencia de Flujo de Caja (Datos Reales)</h3><div style="height:320px;"><canvas id="finanzas-main-chart"></canvas></div></div>
+                    <div class="card" style="padding:24px; background:var(--card-bg); border-radius:16px; border:1px solid var(--border-color);"><h3 style="margin-bottom:20px; font-size:16px;">Composición de Gastos</h3><div style="height:220px; margin-bottom:20px;"><canvas id="finanzas-pie-chart"></canvas></div>
+                        <div style="font-size:13px; display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; justify-content:space-between; color:var(--text-muted);"><span>Compras Stock:</span><b style="color:var(--text-main);">$${(movimientos || []).filter(m => m.tipo === 'gasto' && m.refId.startsWith('ORD')).reduce((acc, m) => acc + m.monto, 0).toLocaleString()}</b></div>
+                            <div style="display:flex; justify-content:space-between; color:var(--text-muted);"><span>Incidencias/Otros:</span><b style="color:var(--text-main);">$${(movimientos || []).filter(m => m.tipo === 'gasto' && !m.refId.startsWith('ORD')).reduce((acc, m) => acc + m.monto, 0).toLocaleString()}</b></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            setTimeout(() => { /* Chart.js Logic (sin cambios) */
+                const ctxBar = document.getElementById('finanzas-main-chart');
+                if(ctxBar) new Chart(ctxBar, { type:'line', data:{ labels:labelsChart, datasets:[{label:'Ingresos', data:dataIngresos, borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,0.1)', fill:true, tension:0.4},{label:'Gastos', data:dataGastos, borderColor:'#ff3d71', backgroundColor:'rgba(255, 61, 113, 0.1)', fill:true, tension:0.4}]}, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true}}}});
+                const ctxPie = document.getElementById('finanzas-pie-chart');
+                if(ctxPie) {
+                    const gCompras = (movimientos || []).filter(m => m.tipo === 'gasto' && m.refId.startsWith('ORD')).reduce((acc, m) => acc + m.monto, 0);
+                    const gOtros = (movimientos || []).filter(m => m.tipo === 'gasto' && !m.refId.startsWith('ORD')).reduce((acc, m) => acc + m.monto, 0);
+                    new Chart(ctxPie, { type:'doughnut', data:{ labels:['Stock', 'Otros'], datasets:[{data:[gCompras, gOtros], backgroundColor:['#4d7cff', '#a855f7'], borderWidth:0}]}, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, cutout:'70%'}});
+                }
+            }, 150);
+
+        } else {
+            // Vistas con FILTROS (Facturas y Diario)
+            const f = window.finanzasFilters;
+            const isFacturas = window.finanzasNav.tab === 'facturas';
+            let dataRaw = isFacturas ? facturas : movimientos;
+
+            // 1. Filtrar
+            let dataFiltrada = (dataRaw || []).filter(item => {
+                const matchBusqueda = (item.cliente || item.concepto || '').toLowerCase().includes(f.busqueda.toLowerCase()) || item.id.toLowerCase().includes(f.busqueda.toLowerCase());
+                const matchTipo = f.tipo === 'todos' || item.tipo === f.tipo;
+                const matchFecha = (!f.fechaDesde || item.fecha >= f.fechaDesde) && (!f.fechaHasta || item.fecha <= f.fechaHasta);
+                return matchBusqueda && matchTipo && matchFecha;
+            });
+
+            // 2. Ordenar
+            dataFiltrada.sort((a, b) => {
+                if (f.orden === 'reciente') return b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id);
+                if (f.orden === 'antiguo') return a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id);
+                if (f.orden === 'monto_desc') return b.monto - a.monto;
+                if (f.orden === 'monto_asc') return a.monto - b.monto;
+                if (f.orden === 'alfa') return (a.cliente || a.concepto).localeCompare(b.cliente || b.concepto);
+                return 0;
+            });
+
+            const filterBarHtml = `
+                <div class="card" style="padding:16px; margin-bottom:20px; display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; background:var(--card-bg); border:1px solid var(--border-color); border-radius:12px;">
+                    <div style="width:160px;">
+                        <label style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">ORDENAR POR</label>
+                        <select class="form-control" onchange="window.setFinanzasFilter('orden', this.value)">
+                            <option value="reciente" ${f.orden === 'reciente' ? 'selected' : ''}>Más Recientes</option>
+                            <option value="antiguo" ${f.orden === 'antiguo' ? 'selected' : ''}>Más Antiguos</option>
+                            <option value="monto_desc" ${f.orden === 'monto_desc' ? 'selected' : ''}>Mayor Importe</option>
+                            <option value="monto_asc" ${f.orden === 'monto_asc' ? 'selected' : ''}>Menor Importe</option>
+                            <option value="alfa" ${f.orden === 'alfa' ? 'selected' : ''}>Orden Alfabético</option>
+                        </select>
+                    </div>
+                    ${!isFacturas ? `
+                    <div style="width:120px;">
+                        <label style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">TIPO</label>
+                        <select class="form-control" onchange="window.setFinanzasFilter('tipo', this.value)">
+                            <option value="todos" ${f.tipo === 'todos' ? 'selected' : ''}>Todos</option>
+                            <option value="ingreso" ${f.tipo === 'ingreso' ? 'selected' : ''}>Ingresos</option>
+                            <option value="gasto" ${f.tipo === 'gasto' ? 'selected' : ''}>Gastos</option>
+                        </select>
+                    </div>` : ''}
+                    <div style="width:140px;">
+                        <label style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">DESDE</label>
+                        <input type="date" class="form-control" value="${f.fechaDesde}" onchange="window.setFinanzasFilter('fechaDesde', this.value)">
+                    </div>
+                    <div style="width:140px;">
+                        <label style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">HASTA</label>
+                        <input type="date" class="form-control" value="${f.fechaHasta}" onchange="window.setFinanzasFilter('fechaHasta', this.value)">
+                    </div>
+                    <button class="btn btn-secondary" style="padding:8px 12px;" onclick="window.clearFinanzasFilters()"><i class="ph ph-arrow-counter-clockwise"></i> Limpiar</button>
+                </div>
+            `;
+
+            if (isFacturas) {
+                const filas = dataFiltrada.map(f => `
+                    <tr>
+                        <td style="font-weight:700; color:var(--primary);">${f.id}</td>
+                        <td>${f.fecha}</td>
+                        <td><b>${f.cliente}</b><br/><small>${f.pedidoId}</small></td>
+                        <td style="font-weight:700;">$${f.monto.toLocaleString()}</td>
+                        <td><span class="status success">COBRADA</span></td>
+                        <td><button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="window.verPDFSimulado('${f.id}')"><i class="ph ph-file-pdf"></i> Ver</button></td>
+                    </tr>
+                `).join('');
+
+                viewContainer.innerHTML = `
+                    <div class="view-header">
+                        <div><h1 class="view-title">Registro de Facturación</h1><p class="view-subtitle">Documentos generados automáticamente al completar ventas</p></div>
+                    </div>
+                    ${navHtml}
+                    ${filterBarHtml}
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>ID Factura</th><th>Fecha</th><th>Cliente / Pedido</th><th>Monto</th><th>Estado</th><th>Acciones</th></tr></thead>
+                            <tbody>${filas.length > 0 ? filas : '<tr><td colspan="6" style="text-align:center; padding:32px;">No hay facturas que coincidan con los filtros</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                const filas = dataFiltrada.map(m => `
+                    <tr style="border-left: 4px solid ${m.tipo === 'ingreso' ? 'var(--success)' : 'var(--danger)'};">
+                        <td>${m.fecha}</td>
+                        <td><span style="font-weight:600; color:${m.tipo === 'ingreso' ? 'var(--success)' : 'var(--danger)'}; text-transform:uppercase; font-size:10px;">${m.tipo}</span></td>
+                        <td>${m.concepto}</td>
+                        <td style="font-weight:700; color:${m.tipo === 'ingreso' ? 'var(--success)' : 'var(--danger)'};">
+                            ${m.tipo === 'ingreso' ? '+' : '-'}$${m.monto.toLocaleString()}
+                        </td>
+                        <td style="color:var(--text-muted); font-size:12px;">${m.refId}</td>
+                    </tr>
+                `).join('');
+
+                viewContainer.innerHTML = `
+                    <div class="view-header">
+                        <div><h1 class="view-title">Libro Diario</h1><p class="view-subtitle">Historial cronológico de todos los movimientos de caja</p></div>
+                    </div>
+                    ${navHtml}
+                    ${filterBarHtml}
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Importe</th><th>Referencia</th></tr></thead>
+                            <tbody>${filas.length > 0 ? filas : '<tr><td colspan="5" style="text-align:center; padding:32px;">No hay movimientos que coincidan con los filtros</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    window.setFinanzasFilter = (key, val) => {
+        window.finanzasFilters[key] = val;
+        renderFinanzas();
+    };
+
+    window.clearFinanzasFilters = () => {
+        window.finanzasFilters = { busqueda: '', fechaDesde: '', fechaHasta: '', tipo: 'todos', orden: 'reciente' };
+        renderFinanzas();
+    };
+
+    window.setFinanzasTab = (tab) => {
+        window.finanzasNav.tab = tab;
+        renderFinanzas();
+    };
+
+    window.verPDFSimulado = (facId) => {
+        const fac = window.erpDB.facturas.find(f => f.id === facId);
+        const content = `
+            <div style="background:#fff; color:#000; padding:40px; border:1px solid #ddd; font-family:serif; line-height:1.5;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:40px;">
+                    <div><h2 style="margin:0; color:#6366f1;">ELECTRONIC-ERP S.A.</h2><p style="font-size:12px;">CIF: B-12345678<br/>Calle Falsa 123, Madrid</p></div>
+                    <div style="text-align:right;"><h3>FACTURA DE VENTA</h3><p><b>Número:</b> ${fac.id}<br/><b>Fecha:</b> ${fac.fecha}</p></div>
+                </div>
+                <div style="margin-bottom:40px; background:#f9fafb; padding:20px; border-radius:8px;">
+                    <h4 style="margin:0 0 10px 0; font-size:12px; color:#666;">CLIENTE:</h4>
+                    <p style="margin:0; font-weight:bold; font-size:16px;">${fac.cliente}</p>
+                </div>
+                <table style="width:100%; border-collapse:collapse; margin-bottom:40px;">
+                    <thead><tr style="border-bottom:2px solid #000; text-align:left;"><th style="padding:10px;">Descripción</th><th style="padding:10px;">Importe</th></tr></thead>
+                    <tbody><tr style="border-bottom:1px solid #eee;"><td style="padding:10px;">Liquidación Pedido ${fac.pedidoId}</td><td style="padding:10px;">$${fac.monto.toLocaleString()}</td></tr></tbody>
+                </table>
+                <div style="text-align:right;">
+                    <p style="font-size:18px;"><b>Total Factura: $${fac.monto.toLocaleString()}</b></p>
+                    <p style="color:#00e676; font-weight:bold; margin-top:20px;">PAGADA / COBRADA</p>
+                </div>
+            </div>
+            <button class="btn btn-primary" style="width:100%; margin-top:20px;" onclick="cerrarModal()">Cerrar Documento</button>
+        `;
+        abrirModal('Visor de Documentos PDF', content);
+    };
 
     // Iniciar
     renderView('dashboard');
