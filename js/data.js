@@ -69,7 +69,7 @@ const defaultDB = {
         { id: 'PRD-048', nombre: 'Sistema Refrigeración Líquida 240mm', categoria: 'Componentes', subcategoria: 'Refrigeración', marca: 'Cooler Master', stock: 10, estado: 'bajo', ubicacion: 'Pasillo 6', precio: 95 },
         { id: 'PRD-049', nombre: 'Ventilador Caja 120mm RGB', categoria: 'Componentes', subcategoria: 'Refrigeración', marca: 'Corsair', stock: 80, estado: 'disponible', ubicacion: 'Pasillo 6', precio: 25 },
         { id: 'PRD-050', nombre: 'Fuente Alimentación 850W 80+ Gold', categoria: 'Componentes', subcategoria: 'Cajas y Fuentes', marca: 'Seasonic', stock: 15, estado: 'disponible', ubicacion: 'Pasillo 5', precio: 135 },
-        { id: 'PRD-051', semt: 'Caja ATX Cristal Templado', categoria: 'Componentes', subcategoria: 'Cajas y Fuentes', marca: 'NZXT', stock: 11, estado: 'bajo', ubicacion: 'Almacén B', precio: 89 },
+        { id: 'PRD-051', nombre: 'Caja ATX Cristal Templado', categoria: 'Componentes', subcategoria: 'Cajas y Fuentes', marca: 'NZXT', stock: 11, estado: 'bajo', ubicacion: 'Almacén B', precio: 89 },
         { id: 'PRD-052', nombre: 'Repetidor Mesh WiFi 6 (Pack 2)', categoria: 'Componentes', subcategoria: 'Redes', marca: 'TP-Link', stock: 25, estado: 'disponible', ubicacion: 'Pasillo 6', precio: 120 }
     ],
     pedidos: [

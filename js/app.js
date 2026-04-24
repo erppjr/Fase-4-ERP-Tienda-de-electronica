@@ -93,6 +93,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function actualizarKPIs() {
         if(window.recalcularKPIs) window.recalcularKPIs();
         if(window.saveERPData) window.saveERPData();
+
+        // Actualizar Badge de Notificaciones (Stock Crítico + Incidencias Abiertas)
+        const badge = document.getElementById('notif-badge');
+        if (badge) {
+            const stockAlerts = window.erpDB.productos.filter(p => p.stock < 5).length;
+            const openIncidents = window.erpDB.incidencias.filter(i => i.estado === 'abierta').length;
+            badge.textContent = stockAlerts + openIncidents;
+            badge.style.display = (stockAlerts + openIncidents) > 0 ? 'flex' : 'none';
+        }
     }
 
     // --- Estado de Navegación Finanzas ---
@@ -160,103 +169,265 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.renderView = renderView; // Exposición global para que Nivel 2 pueda volver a Categorias
 
-    // --- Render Dashboard ---
+    // --- Estado de Filtros Dashboard ---
+    window.dashboardTimeFilter = 'mensual';
+
+    // --- Render Dashboard (Vista Expandida 360 con Filtros Temporales) ---
     function renderDashboard() {
         actualizarKPIs();
         const { totalStock, pedidosPendientes, incidenciasAbiertas } = window.erpDB.kpis;
+        const { movimientos, productos, facturas, empleados, pedidos } = window.erpDB;
         
+        // Cálculos financieros rápidos para el dashboard
+        const ingresosTotales = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
+        const gastosTotales = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((acc, m) => acc + m.monto, 0);
+        const beneficioNeto = ingresosTotales - gastosTotales;
+        
+        const stockCritico = productos.filter(p => p.stock < 5).length;
+        const tareasTotales = empleados.reduce((acc, emp) => acc + (emp.tareas ? emp.tareas.filter(t => t.estado !== 'completada').length : 0), 0);
+
         let textColor = htmlElement.getAttribute('data-theme') === 'dark' ? '#f3f4f6' : '#111827';
         let gridColor = htmlElement.getAttribute('data-theme') === 'dark' ? '#2e344e' : '#e5e7eb';
 
         const html = `
             <div class="view-header">
                 <div>
-                    <h1 class="view-title">Dashboard</h1>
-                    <p class="view-subtitle">Monitor de actividad en tiempo real</p>
+                    <h1 class="view-title">Centro de Control Operativo</h1>
+                    <p class="view-subtitle">Resumen global del estado de la empresa</p>
                 </div>
-                <button class="btn btn-secondary" onclick="window.resetERPData()"><i class="ph ph-arrows-clockwise"></i> Reset Datos</button>
-            </div>
-
-            <div class="card-grid">
-                <div class="kpi-card">
-                    <div class="kpi-header"><span>Stock Total</span><i class="ph ph-package"></i></div>
-                    <div class="kpi-value">${totalStock}</div>
-                    <p class="view-subtitle" style="margin-top: 8px;">Capacidad del Almacén</p>
-                    <div class="progress-container"><div class="progress-bar" style="width: ${Math.min((totalStock/200)*100, 100)}%; background-color: var(--primary);"></div></div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header"><span>Pedidos Pendientes</span><i class="ph ph-shopping-cart text-warning"></i></div>
-                    <div class="kpi-value text-warning">${pedidosPendientes}</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header"><span>Incidencias Abiertas</span><i class="ph ph-warning-circle text-danger"></i></div>
-                    <div class="kpi-value text-danger">${incidenciasAbiertas}</div>
+                <div style="display:flex; gap:12px;">
+                    <button class="btn btn-secondary" onclick="window.resetERPData()"><i class="ph ph-arrows-clockwise"></i> Reiniciar Base de Datos</button>
+                    <button class="btn btn-primary" onclick="window.renderView('finanzas')"><i class="ph ph-chart-line-up"></i> Ver Finanzas Detalladas</button>
                 </div>
             </div>
 
-            <div class="card-grid" style="grid-template-columns: 1fr 1fr;">
-                <div class="kpi-card">
-                    <h3 style="margin-bottom: 16px;">Ventas y Pedidos</h3>
-                    <div class="chart-container"><canvas id="pedidosChart"></canvas></div>
+            <!-- Fila 1: KPIs Principales -->
+            <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                <div class="kpi-card" style="border-left: 4px solid var(--primary);">
+                    <div class="kpi-header"><span>Ingresos Totales</span><i class="ph ph-money" style="color:var(--success);"></i></div>
+                    <div class="kpi-value" style="color:var(--success);">$${ingresosTotales.toLocaleString()}</div>
+                    <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Caja acumulada (Facturación)</p>
                 </div>
-                <div class="kpi-card">
-                    <h3 style="margin-bottom: 16px;">Stock por Categoría</h3>
-                    <div class="chart-container"><canvas id="stockChart"></canvas></div>
+                <div class="kpi-card" style="border-left: 4px solid var(--warning);">
+                    <div class="kpi-header"><span>Pedidos Activos</span><i class="ph ph-shopping-cart" style="color:var(--warning);"></i></div>
+                    <div class="kpi-value" style="color:var(--warning);">${pedidosPendientes}</div>
+                    <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">En espera o procesamiento</p>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid var(--danger);">
+                    <div class="kpi-header"><span>Stock Crítico</span><i class="ph ph-warning" style="color:var(--danger);"></i></div>
+                    <div class="kpi-value" style="color:var(--danger);">${stockCritico}</div>
+                    <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Productos con menos de 5 uds.</p>
+                </div>
+                <div class="kpi-card" style="border-left: 4px solid #a855f7;">
+                    <div class="kpi-header"><span>Tareas Pendientes</span><i class="ph ph-clipboard-text" style="color:#a855f7;"></i></div>
+                    <div class="kpi-value" style="color:#a855f7;">${tareasTotales}</div>
+                    <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Asignadas a empleados</p>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px;">
+                <!-- Sección Izquierda: Gráficas -->
+                <div style="display:flex; flex-direction:column; gap:24px;">
+                    <div class="kpi-card" style="margin:0;">
+                        <h3 style="margin-bottom: 20px; font-size:16px; display:flex; align-items:center; gap:8px;"><i class="ph ph-chart-line" style="color:var(--primary);"></i> Rendimiento Financiero Mensual</h3>
+                        <div style="height: 250px;"><canvas id="mainFinanceChart"></canvas></div>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px;">
+                        <div class="kpi-card" style="margin:0;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <h3 style="font-size:14px; margin:0;">Distribución de Pedidos</h3>
+                                <select class="form-control" style="width:auto; padding:2px 8px; font-size:11px;" onchange="window.setDashboardTimeFilter(this.value)">
+                                    <option value="diario" ${window.dashboardTimeFilter === 'diario' ? 'selected' : ''}>Hoy</option>
+                                    <option value="semanal" ${window.dashboardTimeFilter === 'semanal' ? 'selected' : ''}>Esta Semana</option>
+                                    <option value="mensual" ${window.dashboardTimeFilter === 'mensual' ? 'selected' : ''}>Este Mes</option>
+                                    <option value="anual" ${window.dashboardTimeFilter === 'anual' ? 'selected' : ''}>Este Año</option>
+                                </select>
+                            </div>
+                            <div style="height: 180px;"><canvas id="pedidosChart"></canvas></div>
+                        </div>
+                        <div class="kpi-card" style="margin:0;">
+                            <h3 style="margin-bottom: 16px; font-size:14px;">Stock por Categoría</h3>
+                            <div style="height: 180px;"><canvas id="stockChart"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sección Derecha: Actividad y Alertas -->
+                <div style="display:flex; flex-direction:column; gap:24px;">
+                    <div class="kpi-card" style="margin:0; flex:1;">
+                        <h3 style="margin-bottom: 16px; font-size:16px;">Actividad Reciente</h3>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            ${(movimientos || []).slice(0, 6).map(m => `
+                                <div style="display:flex; align-items:center; gap:12px; padding-bottom:10px; border-bottom:1px solid var(--border-color);">
+                                    <div style="width:32px; height:32px; border-radius:8px; background:${m.tipo === 'ingreso' ? 'rgba(0, 230, 118, 0.1)' : 'rgba(255, 61, 113, 0.1)'}; display:flex; align-items:center; justify-content:center;">
+                                        <i class="ph ${m.tipo === 'ingreso' ? 'ph-arrow-up-right' : 'ph-arrow-down-left'}" style="color:${m.tipo === 'ingreso' ? 'var(--success)' : 'var(--danger)'};"></i>
+                                    </div>
+                                    <div style="flex:1; overflow:hidden;">
+                                        <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.concepto}</div>
+                                        <div style="font-size:11px; color:var(--text-muted);">${m.fecha}</div>
+                                    </div>
+                                    <div style="font-weight:700; font-size:13px; color:${m.tipo === 'ingreso' ? 'var(--success)' : 'var(--danger)'};">
+                                        ${m.tipo === 'ingreso' ? '+' : '-'}$${m.monto.toLocaleString()}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <button class="btn btn-secondary" style="width:100%; margin-top:16px; font-size:12px;" onclick="window.renderView('finanzas'); window.setFinanzasTab('diario');">Ver Libro Diario Completo</button>
+                    </div>
+
+                    <div class="kpi-card" style="margin:0; background:rgba(255, 61, 113, 0.03); border:1px solid rgba(255, 61, 113, 0.1);">
+                        <h3 style="margin-bottom: 12px; font-size:14px; color:var(--danger);"><i class="ph ph-warning-octagon"></i> Alertas de Almacén</h3>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            ${productos.filter(p => p.stock < 10).slice(0, 3).map(p => `
+                                <div style="font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+                                    <span>${p.nombre}</span>
+                                    <b style="color:var(--danger);">${p.stock} uds.</b>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
         viewContainer.innerHTML = html;
 
-        // --- Gráfico de Pedidos (Doughnut) ---
+        // --- Gráficas del Dashboard ---
         setTimeout(() => {
-            const ctxD = document.getElementById('pedidosChart').getContext('2d');
-            const counts = { completado: 0, pendiente: 0, preparacion: 0, incidencia: 0 };
-            window.erpDB.pedidos.forEach(p => counts[p.estado]++);
+            // 1. Gráfico Financiero (Lineal)
+            const ctxFin = document.getElementById('mainFinanceChart').getContext('2d');
+            const mesesMap = {};
+            const nombresMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const hoy = new Date();
+            for(let i=4; i>=0; i--) {
+                const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+                const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+                mesesMap[key] = { label: nombresMeses[d.getMonth()], ingreso: 0, gasto: 0 };
+            }
+            (movimientos || []).forEach(m => {
+                const key = m.fecha.substring(0, 7);
+                if (mesesMap[key]) {
+                    if (m.tipo === 'ingreso') mesesMap[key].ingreso += m.monto;
+                    else mesesMap[key].gasto += m.monto;
+                }
+            });
+            const sortedKeys = Object.keys(mesesMap).sort();
+            new Chart(ctxFin, {
+                type: 'line',
+                data: {
+                    labels: sortedKeys.map(k => mesesMap[k].label),
+                    datasets: [
+                        { label: 'Ingresos', data: sortedKeys.map(k => mesesMap[k].ingreso), borderColor: '#6366f1', tension: 0.4, fill: false },
+                        { label: 'Gastos', data: sortedKeys.map(k => mesesMap[k].gasto), borderColor: '#ff3d71', tension: 0.4, fill: false }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { grid: { display: false }, ticks: { color: textColor } } } }
+            });
 
-            doughnutChart = new Chart(ctxD, {
+            // 2. Gráfico de Pedidos (Doughnut con FILTRO TEMPORAL)
+            const ctxD = document.getElementById('pedidosChart').getContext('2d');
+            const counts = { completado: 0, pendiente: 0, en_proceso: 0, incidencia: 0 };
+            
+            const hoyDate = new Date();
+            const hoyStr = hoyDate.toISOString().split('T')[0];
+            
+            const pedidosFiltrados = window.erpDB.pedidos.filter(p => {
+                const pDate = new Date(p.fecha);
+                if (window.dashboardTimeFilter === 'diario') return p.fecha === hoyStr;
+                if (window.dashboardTimeFilter === 'semanal') {
+                    const diff = (hoyDate - pDate) / (1000 * 60 * 60 * 24);
+                    return diff <= 7;
+                }
+                if (window.dashboardTimeFilter === 'mensual') return p.fecha.startsWith(hoyStr.substring(0, 7));
+                if (window.dashboardTimeFilter === 'anual') return p.fecha.startsWith(hoyStr.substring(0, 4));
+                return true;
+            });
+
+            pedidosFiltrados.forEach(p => { if(counts[p.estado] !== undefined) counts[p.estado]++; });
+            
+            new Chart(ctxD, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Completado', 'Pendiente', 'Preparación', 'Incidencia'],
+                    labels: ['Completado', 'Pendiente', 'Proceso', 'Incidencia'],
                     datasets: [{
-                        data: [counts.completado, counts.pendiente, counts.preparacion, counts.incidencia],
+                        data: [counts.completado, counts.pendiente, counts.en_proceso, counts.incidencia],
                         backgroundColor: ['#00e676', '#ffb300', '#4d7cff', '#ff3d71'],
                         borderWidth: 0
                     }]
                 },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right', labels: { color: textColor } } }
-                }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 }, color: textColor } } }, cutout: '70%' }
             });
 
-            // --- Gráfico de Stock (Bar) ---
+            // 3. Gráfico de Stock (Bar)
             const ctxB = document.getElementById('stockChart').getContext('2d');
             const stockCat = {};
-            window.erpDB.productos.forEach(p => {
-                stockCat[p.categoria] = (stockCat[p.categoria] || 0) + p.stock;
-            });
-            
-            barChart = new Chart(ctxB, {
+            window.erpDB.productos.forEach(p => { stockCat[p.categoria] = (stockCat[p.categoria] || 0) + p.stock; });
+            new Chart(ctxB, {
                 type: 'bar',
                 data: {
-                    labels: Object.keys(stockCat),
-                    datasets: [{
-                        label: 'Unidades',
-                        data: Object.values(stockCat),
-                        backgroundColor: '#4d7cff',
-                    }]
+                    labels: Object.keys(stockCat).map(c => c.substring(0, 8)),
+                    datasets: [{ data: Object.values(stockCat), backgroundColor: '#4d7cff', borderRadius: 4 }]
                 },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    scales: {
-                        y: { ticks: { color: textColor }, grid: { color: gridColor } },
-                        x: { ticks: { color: textColor }, grid: { display: false } }
-                    },
-                    plugins: { legend: { display:false } }
-                }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { grid: { display: false }, ticks: { color: textColor, font: { size: 9 } } } } }
             });
-        }, 100);
+        }, 150);
     }
+
+    window.setDashboardTimeFilter = (val) => {
+        window.dashboardTimeFilter = val;
+        renderDashboard();
+    };
+
+    window.abrirNotificaciones = () => {
+        const { pedidos, incidencias, productos } = window.erpDB;
+        
+        // Alertas de stock crítico
+        const stockAlerts = productos.filter(p => p.stock < 5).map(p => ({
+            titulo: 'Stock Crítico',
+            desc: `Quedan ${p.stock} unidades de ${p.nombre}`,
+            tipo: 'danger',
+            icono: 'ph-warning'
+        }));
+
+        // Pedidos completados recientemente (últimos 3)
+        const completedOrders = pedidos.filter(p => p.estado === 'completado').slice(-3).map(p => ({
+            titulo: 'Pedido Completado',
+            desc: `El pedido ${p.id} de ${p.cliente} ha sido finalizado.`,
+            tipo: 'success',
+            icono: 'ph-check-circle'
+        }));
+
+        // Incidencias abiertas
+        const openIncidents = incidencias.filter(i => i.estado === 'abierta').map(i => ({
+            titulo: 'Nueva Incidencia',
+            desc: `${i.titulo} (${i.categoria})`,
+            tipo: 'warning',
+            icono: 'ph-info'
+        }));
+
+        const todas = [...stockAlerts, ...openIncidents, ...completedOrders];
+
+        const html = `
+            <div style="display:flex; flex-direction:column; gap:12px; max-height:60vh; overflow-y:auto; padding-right:8px;">
+                ${todas.map(n => `
+                    <div style="padding:12px; border-radius:12px; background:var(--card-bg); border-left:4px solid var(--${n.tipo}); display:flex; gap:12px; align-items:center;">
+                        <i class="ph ${n.icono}" style="font-size:20px; color:var(--${n.tipo});"></i>
+                        <div>
+                            <div style="font-size:13px; font-weight:700;">${n.titulo}</div>
+                            <div style="font-size:12px; color:var(--text-muted);">${n.desc}</div>
+                        </div>
+                    </div>
+                `).join('')}
+                ${todas.length === 0 ? '<p style="text-align:center; padding:20px; color:var(--text-muted);">No tienes notificaciones pendientes</p>' : ''}
+            </div>
+            <button class="btn btn-primary" style="width:100%; margin-top:20px; justify-content:center;" onclick="cerrarModal()">Entendido</button>
+        `;
+
+        abrirModal('Centro de Notificaciones', html);
+        
+        // Al abrir, reseteamos el badge visual
+        document.getElementById('notif-badge').textContent = '0';
+    };
 
     // --- Render Inventario Nivel 1 (Estructural) ---
     function renderInventario() {
@@ -564,8 +735,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (stockDiff !== 0) return stockDiff;
             
-            if (tableFilters.sortName === 'asc') return a.nombre.localeCompare(b.nombre);
-            if (tableFilters.sortName === 'desc') return b.nombre.localeCompare(a.nombre);
+            const nameA = a.nombre || '';
+            const nameB = b.nombre || '';
+            if (tableFilters.sortName === 'asc') return nameA.localeCompare(nameB);
+            if (tableFilters.sortName === 'desc') return nameB.localeCompare(nameA);
             
             return 0;
         });
